@@ -2,7 +2,7 @@
 Currently deployed on the Avalanche Fuji network, you can access it through the following command
 
 #### Create Account With Address
-> address with prefix 0x
+> address with prefix 0x,An address only needs to be called once, and if an error occurs, it means that the address has already been created
 ```bash
 curl -X POST --data '{
   "jsonrpc": "2.0",
