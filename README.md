@@ -9,7 +9,7 @@ curl -X POST --data '{
   "id"     : 1,
   "method" : "createAccount",
   "params" : [{"data":"0xb3e5e9d58797efbce688894c9aebf09afb074d9c03201b452bc81e8afcd4a75d"}]
-}' -H 'content-type:application/json;'  https://m2.movementlabs.xyz/rpc/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc 
+}' -H 'content-type:application/json;'  https://subnet.devnet.m1.movementlabs.xyz/v1/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc 
 
 ```
 
@@ -21,7 +21,7 @@ curl -X POST --data '{
   "id"     : 1,
   "method" : "faucet",
   "params" : [{"data":"b3e5e9d58797efbce688894c9aebf09afb074d9c03201b452bc81e8afcd4a75d"}]
-}' -H 'content-type:application/json;'   https://m2.movementlabs.xyz/rpc/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc
+}' -H 'content-type:application/json;'   https://subnet.devnet.m1.movementlabs.xyz/v1/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc
 
 ```
 
@@ -32,6 +32,6 @@ curl -X POST --data '{
   "id"     : 1,
   "method" : "getTransactionByHash",
   "params" : [{"data":"1f073fce3c2390d68a95289dc81df9dad1d0fa07541da5da4e1b46241f4bd24e"}]
-}' -H 'content-type:application/json;'  https://m2.movementlabs.xyz/rpc/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc 
+}' -H 'content-type:application/json;'  https://subnet.devnet.m1.movementlabs.xyz/v1/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc
 
 ```
