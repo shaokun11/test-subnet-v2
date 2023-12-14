@@ -10,7 +10,7 @@ https://explorer.devnet.m1.movementlabs.xyz
 ### Subnet Native Token Faucet and Birdge
 
 ```bash
-https://faucet.devnet.m1.movementlabs.xyz
+https://evm-bridge.devnet.m1.movementlabs.xyz
 ```
 
 ### Subnet Chain ID
