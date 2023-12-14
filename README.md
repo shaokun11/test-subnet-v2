@@ -7,11 +7,33 @@ Currently deployed on the Avalanche Fuji network, you can access it through the 
 https://explorer.devnet.m1.movementlabs.xyz
 ```
 
-### Subnet Native Token Faucet and Birdge
+### Subnet and Move EVM Native Token Birdge
 
-```bash
+```
 https://evm-bridge.devnet.m1.movementlabs.xyz
 ```
+
+### Subnet Native Token Faucet
+
+1. Replace `<replace_with_move_address>` with your desired move address and execute the command in the command line:
+
+```bash
+curl https://devnet.m1.movementlabs.xyz/v1/faucet?address=<replace_with_move_address>
+
+```
+
+2. Open *https://evm-bridge.devnet.m1.movementlabs.xyz/#/Faucet*, enter your move address in the input field, and click on the "Request" button to proceed.
+
+
+### Move Evm Native Token Faucet
+
+1. Replace `<replace_with_eth_address>` with your desired ethereum address and execute the command in the command line.
+
+```bash
+curl https://mevm.devnet.m1.movementlabs.xyz/v1/eth_faucet?address=<replace_with_eth_address>
+```
+2. First, claim the Native token through subnet faucet and then bridge it to Move Evm using *https://evm-bridge.devnet.m1.movementlabs.xyz*.
+
 
 ### Subnet Chain ID
 ```
