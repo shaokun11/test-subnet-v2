@@ -53,10 +53,7 @@ module aptos_framework::rlp_decode {
                 i = offset + size;
                 vector::push_back(&mut output, next);
             } else if (type == TYPE_LIST) {
-                let next = decode_bytes(&slice(rlp, offset, size));
-                let len = vector::length(&next);
-                i = offset + if(len == 0) { 1 } else { len };
-                vector::push_back(&mut output, next);
+                i = offset
             } else {
                 assert!(false, ERR_NOT_BYTES_LIST);
             };

@@ -11,7 +11,7 @@ use serde::{Deserialize, Serialize};
 use tokio::sync::RwLock;
 
 use crate::block::Block;
-use crate::vm::{ Vm};
+use crate::vm::Vm;
 
 /// Manages block and chain states for this Vm, both in-memory and persistent.
 #[derive(Clone)]
@@ -94,7 +94,7 @@ impl State {
             })
     }
 
-    pub fn set_vm(&mut self, vm:Vm) {
+    pub fn set_vm(&mut self, vm: Vm) {
         self.vm = Some(Arc::new(RwLock::new(vm)));
     }
 
@@ -120,7 +120,7 @@ impl State {
                     return Ok(ids::Id::empty());
                 }
                 Err(e)
-            }
+            },
         }
     }
 
@@ -180,4 +180,3 @@ impl State {
         Ok(blk)
     }
 }
-

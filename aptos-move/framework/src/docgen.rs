@@ -1,7 +1,7 @@
 // Copyright © Aptos Foundation
 // SPDX-License-Identifier: Apache-2.0
 
-use anyhow::{anyhow, Context};
+use anyhow::{anyhow, Context, Ok};
 use codespan_reporting::{
     diagnostic::Severity,
     term::termcolor::{ColorChoice, StandardStream},
@@ -53,66 +53,67 @@ pub struct DocgenOptions {
 impl DocgenOptions {
     pub fn run(
         &self,
-        package_path: String,
-        doc_path: Vec<String>,
-        model: &GlobalEnv,
+        _package_path: String,
+        _doc_path: Vec<String>,
+        _model: &GlobalEnv,
     ) -> anyhow::Result<()> {
+        return Ok(());
         // To get relative paths right, we need to run docgen with relative paths. To this
         // end we need to set the current directory of the process. This in turn is not thread
         // safe, so we need to make a critical section out of the entire generation process.
         // TODO: fix this in docgen
-        static MUTEX: Mutex<u8> = Mutex::new(0);
-        let _lock = MUTEX.lock();
-        let current_dir = std::env::current_dir()?.canonicalize()?;
-        std::env::set_current_dir(&package_path)?;
-        let output_directory = PathBuf::from("doc");
-        let doc_path = doc_path
-            .into_iter()
-            .filter_map(|s| {
-                PathBuf::from(s)
-                    .strip_prefix(&package_path)
-                    .map(|p| p.display().to_string())
-                    .ok()
-            })
-            .collect();
-        let options = move_docgen::DocgenOptions {
-            section_level_start: 1,
-            include_private_fun: self.include_impl,
-            include_specs: self.include_specs,
-            specs_inlined: self.specs_inlined,
-            include_impl: self.include_impl,
-            toc_depth: 3,
-            collapsed_sections: self.collapsed_sections,
-            output_directory: output_directory.display().to_string(),
-            doc_path,
-            root_doc_templates: self
-                .landing_page_template
-                .as_ref()
-                .map(|s| vec![s.clone()])
-                .unwrap_or_else(Vec::new),
-            references_file: self.references_file.clone(),
-            include_dep_diagrams: self.include_dep_diagram,
-            include_call_diagrams: false,
-            compile_relative_to_output_dir: false,
-        };
-        let output = move_docgen::Docgen::new(model, &options).gen();
-        if model.diag_count(Severity::Warning) > 0 {
-            let mut error_writer = StandardStream::stderr(ColorChoice::Auto);
-            model.report_diag(&mut error_writer, Severity::Warning);
-        }
-        let res = if model.has_errors() {
-            Err(anyhow!("documentation generation failed"))
-        } else {
-            // Write the generated output files
-            std::fs::create_dir_all(&output_directory)?;
-            for (file_name, content) in output {
-                let dest = PathBuf::from(file_name);
-                std::fs::write(dest.as_path(), content)
-                    .with_context(|| format!("writing `{}`", dest.display()))?;
-            }
-            Ok(())
-        };
-        std::env::set_current_dir(current_dir)?;
-        res
+        // static MUTEX: Mutex<u8> = Mutex::new(0);
+        // let _lock = MUTEX.lock();
+        // let current_dir = std::env::current_dir()?.canonicalize()?;
+        // std::env::set_current_dir(&package_path)?;
+        // let output_directory = PathBuf::from("doc");
+        // let doc_path = doc_path
+        //     .into_iter()
+        //     .filter_map(|s| {
+        //         PathBuf::from(s)
+        //             .strip_prefix(&package_path)
+        //             .map(|p| p.display().to_string())
+        //             .ok()
+        //     })
+        //     .collect();
+        // let options = move_docgen::DocgenOptions {
+        //     section_level_start: 1,
+        //     include_private_fun: self.include_impl,
+        //     include_specs: self.include_specs,
+        //     specs_inlined: self.specs_inlined,
+        //     include_impl: self.include_impl,
+        //     toc_depth: 3,
+        //     collapsed_sections: self.collapsed_sections,
+        //     output_directory: output_directory.display().to_string(),
+        //     doc_path,
+        //     root_doc_templates: self
+        //         .landing_page_template
+        //         .as_ref()
+        //         .map(|s| vec![s.clone()])
+        //         .unwrap_or_else(Vec::new),
+        //     references_file: self.references_file.clone(),
+        //     include_dep_diagrams: self.include_dep_diagram,
+        //     include_call_diagrams: false,
+        //     compile_relative_to_output_dir: false,
+        // };
+        // let output = move_docgen::Docgen::new(model, &options).gen();
+        // if model.diag_count(Severity::Warning) > 0 {
+        //     let mut error_writer = StandardStream::stderr(ColorChoice::Auto);
+        //     model.report_diag(&mut error_writer, Severity::Warning);
+        // }
+        // let res = if model.has_errors() {
+        //     Err(anyhow!("documentation generation failed"))
+        // } else {
+        //     // Write the generated output files
+        //     std::fs::create_dir_all(&output_directory)?;
+        //     for (file_name, content) in output {
+        //         let dest = PathBuf::from(file_name);
+        //         std::fs::write(dest.as_path(), content)
+        //             .with_context(|| format!("writing `{}`", dest.display()))?;
+        //     }
+        //     Ok(())
+        // };
+        // std::env::set_current_dir(current_dir)?;
+        // res
     }
 }

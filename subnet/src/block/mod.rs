@@ -254,7 +254,6 @@ impl fmt::Display for Block {
     }
 }
 
-
 #[tonic::async_trait]
 impl subnet::rpc::consensus::snowman::Block for Block {
     async fn bytes(&self) -> &[u8] {
@@ -297,4 +296,3 @@ impl subnet::rpc::consensus::snowman::Decidable for Block {
         self.reject().await
     }
 }
-

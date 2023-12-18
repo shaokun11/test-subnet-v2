@@ -11,6 +11,7 @@ use jsonrpc_derive::rpc;
 use serde::{Deserialize, Serialize};
 
 use crate::api::de_request;
+use crate::util::HexParser;
 use crate::vm::Vm;
 
 #[rpc]
@@ -58,7 +59,10 @@ pub trait Rpc {
 
     /*******************************HELPER API START***************************************/
     #[rpc(name = "faucet", alias("aptosvm.faucet"))]
-    fn facet_apt(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>>;
+    fn faucet_apt(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>>;
+
+    #[rpc(name = "faucetWithCli")]
+    fn faucet_with_cli(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>>;
 
     #[rpc(name = "createAccount", alias("aptosvm.createAccount"))]
     fn create_account(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>>;
@@ -128,7 +132,7 @@ pub struct GetTableItemArgs {
     pub key_type: String,
     pub value_type: String,
     pub key: String,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -137,13 +141,14 @@ pub struct RpcReq {
     pub ledger_version: Option<U64>,
     pub start: Option<String>,
     pub limit: Option<u16>,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct RpcRes {
     pub data: String,
     pub header: String,
+    pub error: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -151,7 +156,7 @@ pub struct RpcTableReq {
     pub query: String,
     pub body: String,
     pub ledger_version: Option<U64>,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -160,7 +165,7 @@ pub struct RpcEventNumReq {
     pub creation_number: U64,
     pub start: Option<U64>,
     pub limit: Option<u16>,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -170,20 +175,20 @@ pub struct RpcEventHandleReq {
     pub address: String,
     pub event_handle: String,
     pub field_name: String,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct BlockArgs {
     pub height_or_version: u64,
     pub with_transactions: Option<bool>,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct GetTransactionByVersionArgs {
     pub version: U64,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
@@ -191,14 +196,14 @@ pub struct AccountStateArgs {
     pub account: String,
     pub resource: String,
     pub ledger_version: Option<U64>,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Deserialize, Serialize, Debug, Clone)]
 pub struct PageArgs {
     pub start: Option<U64>,
     pub limit: Option<u16>,
-    pub is_bsc_format: Option<bool>,
+    pub is_bcs_format: Option<bool>,
 }
 
 #[derive(Clone)]
@@ -225,7 +230,7 @@ impl Rpc for ChainService {
         log::debug!("submit_transaction called");
         let vm = self.vm.clone();
         Box::pin(async move {
-            let accept = if args.is_bsc_format.unwrap_or(false) {
+            let accept = if args.is_bcs_format.unwrap_or(false) {
                 AcceptType::Bcs
             } else {
                 AcceptType::Json
@@ -240,7 +245,7 @@ impl Rpc for ChainService {
     fn submit_transaction_batch(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>> {
         let vm = self.vm.clone();
         Box::pin(async move {
-            let accept = if args.is_bsc_format.unwrap_or(false) {
+            let accept = if args.is_bcs_format.unwrap_or(false) {
                 AcceptType::Bcs
             } else {
                 AcceptType::Json
@@ -283,7 +288,7 @@ impl Rpc for ChainService {
         let vm = self.vm.clone();
         Box::pin(async move {
             let data = hex::decode(args.data).unwrap();
-            let accept = if args.is_bsc_format.unwrap_or(false) {
+            let accept = if args.is_bcs_format.unwrap_or(false) {
                 AcceptType::Bcs
             } else {
                 AcceptType::Json
@@ -309,16 +314,17 @@ impl Rpc for ChainService {
         })
     }
 
-    fn facet_apt(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>> {
+    fn faucet_apt(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>> {
         let vm = self.vm.clone();
         Box::pin(async move {
-            let acc = hex::decode(args.data).unwrap();
-            let accept = if args.is_bsc_format.unwrap_or(false) {
+            let s = args.data.as_str();
+            let acc = HexParser::parse_hex_string(s).unwrap();
+            let accept = if args.is_bcs_format.unwrap_or(false) {
                 AcceptType::Bcs
             } else {
                 AcceptType::Json
             };
-            let ret = vm.facet_apt(acc, accept).await;
+            let ret = vm.faucet_apt(acc, accept).await;
             Ok(ret)
         })
     }
@@ -326,12 +332,13 @@ impl Rpc for ChainService {
     fn create_account(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>> {
         let vm = self.vm.clone();
         Box::pin(async move {
-            let accept = if args.is_bsc_format.unwrap_or(false) {
+            let accept = if args.is_bcs_format.unwrap_or(false) {
                 AcceptType::Bcs
             } else {
                 AcceptType::Json
             };
-            let acc = hex::decode(args.data).unwrap();
+            let s = args.data.as_str();
+            let acc = HexParser::parse_hex_string(s).unwrap();
             let ret = vm.create_account(acc, accept).await;
             Ok(ret)
         })
@@ -396,7 +403,6 @@ impl Rpc for ChainService {
     fn view_function(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>> {
         let vm = self.vm.clone();
         Box::pin(async move {
-            log::info!("view_function called {}", args.data.clone());
             let ret = vm.view_function(args).await;
             return Ok(ret);
         })
@@ -439,6 +445,16 @@ impl Rpc for ChainService {
         Box::pin(async move {
             let ret = vm.get_ledger_info().await;
             return Ok(ret);
+        })
+    }
+
+    fn faucet_with_cli(&self, args: RpcReq) -> BoxFuture<Result<RpcRes>> {
+        let vm = self.vm.clone();
+        Box::pin(async move {
+            let s = args.data.as_str();
+            let acc = HexParser::parse_hex_string(s).unwrap();
+            let ret = vm.faucet_with_cli(acc).await;
+            Ok(ret)
         })
     }
 }

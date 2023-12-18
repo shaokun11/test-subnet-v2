@@ -29,8 +29,6 @@ impl StaticService {
     }
 }
 
-
-
 impl Rpc for StaticService {
     fn ping(&self) -> BoxFuture<Result<crate::api::PingResponse>> {
         log::debug!("ping called");

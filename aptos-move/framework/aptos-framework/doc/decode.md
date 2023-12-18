@@ -183,10 +183,7 @@
             i = offset + size;
             <a href="../../aptos-stdlib/../move-stdlib/doc/vector.md#0x1_vector_push_back">vector::push_back</a>(&<b>mut</b> output, next);
         } <b>else</b> <b>if</b> (type == <a href="decode.md#0x1_rlp_decode_TYPE_LIST">TYPE_LIST</a>) {
-            <b>let</b> next = <a href="decode.md#0x1_rlp_decode_decode_bytes">decode_bytes</a>(&<a href="decode.md#0x1_rlp_decode_slice">slice</a>(rlp, offset, size));
-            <b>let</b> len = <a href="../../aptos-stdlib/../move-stdlib/doc/vector.md#0x1_vector_length">vector::length</a>(&next);
-            i = offset + <b>if</b>(len == 0) { 1 } <b>else</b> { len };
-            <a href="../../aptos-stdlib/../move-stdlib/doc/vector.md#0x1_vector_push_back">vector::push_back</a>(&<b>mut</b> output, next);
+            i = offset
         } <b>else</b> {
             <b>assert</b>!(<b>false</b>, <a href="decode.md#0x1_rlp_decode_ERR_NOT_BYTES_LIST">ERR_NOT_BYTES_LIST</a>);
         };
