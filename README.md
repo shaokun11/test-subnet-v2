@@ -4,13 +4,13 @@ Currently deployed on the Avalanche Fuji network, you can access it through the 
 ### Subnet and Move EVM Explorer
 
 ```bash
-https://explorer.devnet.m1.movementlabs.xyz
+https://explorer.devnet.internal.m1.movementlabs.xyz
 ```
 
-### Subnet and Move EVM Native Token Birdge
+### Subnet and Move EVM Native Token Bridge
 
 ```
-https://evm-bridge.devnet.m1.movementlabs.xyz
+https://evm-bridge.devnet.internal.m1.movementlabs.xyz/
 ```
 
 ### Subnet Native Token Faucet
@@ -18,11 +18,11 @@ https://evm-bridge.devnet.m1.movementlabs.xyz
 1. Replace `<replace_with_move_address>` with your desired move address and execute the command in the command line:
 
 ```bash
-curl https://devnet.m1.movementlabs.xyz/v1/faucet?address=<replace_with_move_address>
+curl https://devnet.internal.m1.movementlabs.xyz/v1/faucet?address=<replace_with_move_address>
 
 ```
 
-2. Open *https://evm-bridge.devnet.m1.movementlabs.xyz/#/Faucet*, enter your move address in the input field, and click on the "Request" button to proceed.
+2. Open *https://evm-bridge.devnet.internal.m1.movementlabs.xyz/#/Faucet*, enter your move address in the input field, and click on the "Request" button to proceed.
 
 
 ### Move Evm Native Token Faucet
@@ -30,9 +30,9 @@ curl https://devnet.m1.movementlabs.xyz/v1/faucet?address=<replace_with_move_add
 1. Replace `<replace_with_eth_address>` with your desired ethereum address and execute the command in the command line.
 
 ```bash
-curl https://mevm.devnet.m1.movementlabs.xyz/v1/eth_faucet?address=<replace_with_eth_address>
+curl https://mevm.devnet.internal.m1.movementlabs.xyz/v1/eth_faucet?address=<replace_with_eth_address>
 ```
-2. First, claim the Native token through subnet faucet and then bridge it to Move Evm using *https://evm-bridge.devnet.m1.movementlabs.xyz*.
+2. First, claim the Native token through subnet faucet and then bridge it to Move Evm using *https://evm-bridge.devnet.internal.m1.movementlabs.xyz*.
 
 
 ### Subnet Chain ID
@@ -41,7 +41,7 @@ curl https://mevm.devnet.m1.movementlabs.xyz/v1/eth_faucet?address=<replace_with
 ```
 ### Subnet JSON-RPC Endpoint
 ```
-https://subnet.devnet.m1.movementlabs.xyz/v1
+https://subnet.devnet.internal.m1.movementlabs.xyz/v1
 ```
 
 ```bash
@@ -50,19 +50,19 @@ curl -X POST --data '{
   "id"     : 1,
   "method" : "getTransactionByHash",
   "params" : [{"data":"1f073fce3c2390d68a95289dc81df9dad1d0fa07541da5da4e1b46241f4bd24e"}]
-}' -H 'content-type:application/json;'  https://subnet.devnet.m1.movementlabs.xyz/v1/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc
+}' -H 'content-type:application/json;'  https://subnet.devnet.internal.m1.movementlabs.xyz/v1/ext/bc/2vUTKYZBbLtXnfCL2RF5XEChZf1wxVYQqxZQQCShMmseSKSiee/rpc
 
 ```
 
 ### Subnet Restful Endpoint
 
 ```
-https://devnet.m1.movementlabs.xyz/v1
+https://devnet.internal.m1.movementlabs.xyz/v1
 ```
 
 ```javascript
 const { AptosClient } = require("aptos");
-const NODE_URL = "https://devnet.m1.movementlabs.xyz/v1";
+const NODE_URL = "https://devnet.internal.m1.movementlabs.xyz/v1";
 const client = new AptosClient(NODE_URL);
 
 getLedgerInfo();
@@ -91,7 +91,7 @@ async function getLedgerInfo() {
 > chainId 336 (0x150)
 
 ```bash
-https://mevm.devnet.m1.movementlabs.xyz/v1
+https://mevm.devnet.internal.m1.movementlabs.xyz/v1
 ```
 
 ```javascript
@@ -100,7 +100,7 @@ const { Web3 } = require("web3");
 getTransactionReceipt();
 
 async function getTransactionReceipt() {
-    const web3 = new Web3(new Web3.providers.HttpProvider("https://mevm.devnet.m1.movementlabs.xyz/v1"));
+    const web3 = new Web3(new Web3.providers.HttpProvider("https://mevm.devnet.internal.m1.movementlabs.xyz/v1"));
     const res = await web3.eth.getTransactionReceipt(
         "0x43465b887a3f4655f80b1b241ce08164f77a29ea704b6bcfd5004031c1982ff9"
     );
