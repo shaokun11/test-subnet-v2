@@ -1,15 +1,14 @@
 module aptos_framework::evm {
-    friend aptos_framework::genesis;
-
     #[test_only]
     use aptos_framework::account;
-    use aptos_framework::account::{exists_at, new_event_handle};
+    // use std::vector;
+    use aptos_framework::account::{create_resource_address, exists_at, new_event_handle};
     use std::vector;
     use aptos_framework::coin;
     use aptos_framework::aptos_coin::AptosCoin;
     use aptos_std::secp256k1::{ecdsa_recover, ecdsa_signature_from_bytes, ecdsa_raw_public_key_to_bytes};
     use std::option::borrow;
-    use aptos_std::aptos_hash::{keccak256};
+    use aptos_std::aptos_hash::keccak256;
     use aptos_framework::create_signer::create_signer;
     #[test_only]
     use std::string;
@@ -26,19 +25,7 @@ module aptos_framework::evm {
     use aptos_std::table::Table;
     use aptos_framework::rlp_decode::{decode_bytes_list};
     use aptos_std::from_bcs::{to_address};
-    use std::bcs::to_bytes;
     use aptos_framework::rlp_encode::encode_bytes_list;
-    #[test_only]
-    use aptos_framework::account::create_account_for_test;
-    use aptos_framework::delegate::execute_move_tx;
-    #[test_only]
-    use aptos_framework::multisig_account::{get_next_multisig_account_address, create_with_owners, create_transaction, can_be_executed};
-    #[test_only]
-    use std::features;
-    #[test_only]
-    use aptos_framework::timestamp;
-    #[test_only]
-    use aptos_framework::chain_id;
 
     const TX_TYPE_LEGACY: u64 = 1;
 
@@ -47,18 +34,15 @@ module aptos_framework::evm {
     const INSUFFIENT_BALANCE: u64 = 10003;
     const NONCE: u64 = 10004;
     const CONTRACT_READ_ONLY: u64 = 10005;
-    const CREATE2_CONTRACT_DEPLOYED: u64 = 10006;
-    const CREATE_CONTRACT_DEPLOYED: u64 = 10007;
-    const TX_NOT_SUPPORT: u64 = 10008;
-    const ACCOUNT_NOT_EXIST: u64 = 10009;
-    const PRECOMPILE_SELECTOR: u64 = 10010;
+    const CONTRACT_DEPLOYED: u64 = 10006;
+    const TX_NOT_SUPPORT: u64 = 10007;
+    const ACCOUNT_NOT_EXIST: u64 = 10008;
     const CONVERT_BASE: u256 = 10000000000;
     const CHAIN_ID: u64 = 0x150;
 
+
     const U256_MAX: u256 = 115792089237316195423570985008687907853269984665640564039457584007913129639935;
     const ZERO_ADDR: vector<u8> =      x"0000000000000000000000000000000000000000000000000000000000000000";
-    const DEPLOY_ADDR: vector<u8> =      x"0000000000000000000000000000000000000000000000000000000000000100";
-    const PRECOMPILE_ADDR: vector<u8> =      x"0000000000000000000000000000000000000000000000000000000000000101";
     const ONE_ADDR: vector<u8> =       x"0000000000000000000000000000000000000000000000000000000000000001";
     const CHAIN_ID_BYTES: vector<u8> = x"0150";
 
@@ -115,12 +99,9 @@ module aptos_framework::evm {
         log4Event: EventHandle<Log4Event>,
     }
 
-    public(friend) fun initialize() acquires Account {
-        let address_contract = to_address(PRECOMPILE_ADDR);
-        create_account_if_not_exist(address_contract);
-        create_event_if_not_exist(address_contract);
-        borrow_global_mut<Account>(address_contract).is_contract = true;
-    }
+    native fun revert(
+        message: vector<u8>
+    );
 
     public entry fun send_tx(
         sender: &signer,
@@ -143,7 +124,7 @@ module aptos_framework::evm {
             let r = *vector::borrow(&decoded, 7);
             let s = *vector::borrow(&decoded, 8);
 
-            let message = if(v > 28) encode_bytes_list(vector[
+            let message = encode_bytes_list(vector[
                 u256_to_trimed_data(nonce),
                 u256_to_trimed_data(gas_price),
                 u256_to_trimed_data(gas_limit),
@@ -153,38 +134,11 @@ module aptos_framework::evm {
                 CHAIN_ID_BYTES,
                 x"",
                 x""
-            ]) else encode_bytes_list(vector[
-                u256_to_trimed_data(nonce),
-                u256_to_trimed_data(gas_price),
-                u256_to_trimed_data(gas_limit),
-                evm_to,
-                u256_to_trimed_data(value),
-                data
-            ]);
+                ]);
             let message_hash = keccak256(message);
             verify_signature(evm_from, message_hash, to_32bit(r), to_32bit(s), v);
-            evm_to = to_32bit(evm_to);
-            evm_to = if(evm_to == ZERO_ADDR) DEPLOY_ADDR else evm_to;
-            execute(to_32bit(evm_from), evm_to, (nonce as u64), data, value);
+            execute(to_32bit(evm_from), to_32bit(evm_to), (nonce as u64), data, value);
             transfer_to_move_addr(to_32bit(evm_from), address_of(sender), gas * CONVERT_BASE);
-        } else {
-            assert!(false, TX_NOT_SUPPORT);
-        }
-    }
-
-    public entry fun send_move_tx_to_evm(
-        sender: &signer,
-        nonce: u64,
-        evm_to: vector<u8>,
-        value_bytes: vector<u8>,
-        data: vector<u8>,
-        tx_type: u64,
-    ) acquires Account, ContractEvent {
-        if(tx_type == TX_TYPE_LEGACY) {
-            evm_to = to_32bit(evm_to);
-            evm_to = if(evm_to == ZERO_ADDR) DEPLOY_ADDR else evm_to;
-            let evm_from = slice(to_bytes(&address_of(sender)), 12, 20);
-            execute(to_32bit(evm_from), evm_to, nonce, data, to_u256(value_bytes));
         } else {
             assert!(false, TX_NOT_SUPPORT);
         }
@@ -199,9 +153,9 @@ module aptos_framework::evm {
     ) acquires Account, ContractEvent {
         let value = to_u256(value_bytes);
         if(tx_type == TX_TYPE_LEGACY) {
-            let address_from = to_address(to_32bit(evm_from));
+            let address_from = create_resource_address(&@aptos_framework, to_32bit(evm_from));
             assert!(exists<Account>(address_from), ACCOUNT_NOT_EXIST);
-            let nonce = borrow_global<Account>(address_from).nonce;
+            let nonce = borrow_global<Account>(create_resource_address(&@aptos_framework, to_32bit(evm_from))).nonce;
             execute(to_32bit(evm_from), to_32bit(evm_to), nonce, data, value);
         } else {
             assert!(false, TX_NOT_SUPPORT);
@@ -216,19 +170,20 @@ module aptos_framework::evm {
 
     #[view]
     public fun get_move_address(evm_addr: vector<u8>): address {
-        to_address(to_32bit(evm_addr))
+        create_resource_address(&@aptos_framework, to_32bit(evm_addr))
     }
 
     #[view]
     public fun query(sender:vector<u8>, contract_addr: vector<u8>, data: vector<u8>): vector<u8> acquires Account, ContractEvent {
         contract_addr = to_32bit(contract_addr);
-        let contract_store = borrow_global_mut<Account>(to_address(contract_addr));
+        let contract_store = borrow_global_mut<Account>(create_resource_address(&@aptos_framework, contract_addr));
+        sender = to_32bit(sender);
         run(sender, sender, contract_addr, contract_store.code, data, true, 0)
     }
 
     #[view]
     public fun get_storage_at(addr: vector<u8>, slot: vector<u8>): vector<u8> acquires Account {
-        let move_address = to_address(addr);
+        let move_address = create_resource_address(&@aptos_framework, addr);
         if(exists<Account>(move_address)) {
             let account_store = borrow_global<Account>(move_address);
             let slot_u256 = data_to_u256(slot, 0, (vector::length(&slot) as u256));
@@ -240,18 +195,19 @@ module aptos_framework::evm {
         } else {
             vector::empty<u8>()
         }
+
     }
 
     fun execute(evm_from: vector<u8>, evm_to: vector<u8>, nonce: u64, data: vector<u8>, value: u256): vector<u8> acquires Account, ContractEvent {
-        let address_from = to_address(evm_from);
-        let address_to = to_address(evm_to);
+        let address_from = create_resource_address(&@aptos_framework, evm_from);
+        let address_to = create_resource_address(&@aptos_framework, evm_to);
         create_account_if_not_exist(address_from);
         create_account_if_not_exist(address_to);
         verify_nonce(address_from, nonce);
         let account_store_to = borrow_global_mut<Account>(address_to);
-        if(evm_to == DEPLOY_ADDR) {
+        if(evm_to == ZERO_ADDR) {
             let evm_contract = get_contract_address(evm_from, nonce);
-            let address_contract = to_address(evm_contract);
+            let address_contract = create_resource_address(&@aptos_framework, evm_contract);
             create_account_if_not_exist(address_contract);
             create_event_if_not_exist(address_contract);
             borrow_global_mut<Account>(address_contract).is_contract = true;
@@ -272,21 +228,6 @@ module aptos_framework::evm {
         }
     }
 
-    fun precompile(sender: vector<u8>, value: u256, calldata: vector<u8>, readOnly: bool): vector<u8> acquires Account {
-        assert!(!readOnly, CONTRACT_READ_ONLY);
-        let selector = slice(calldata, 0, 4);
-        assert!(selector == x"dfaea795", PRECOMPILE_SELECTOR);
-
-        let to = to_address(slice(calldata, 4, 32));
-        transfer_to_move_addr(sender, to, value);
-
-        let signer = create_signer(to_address(sender));
-        let len = to_u256(slice(calldata, 68, 32));
-        execute_move_tx(&signer, to, slice(calldata, 100, len));
-
-        vector::empty<u8>()
-    }
-
     // This function is used to execute EVM bytecode.
     // Parameters:
     // - sender: The address of the sender.
@@ -297,12 +238,8 @@ module aptos_framework::evm {
     // - readOnly: A boolean flag indicating whether the execution should be read-only.
     // - value: The value to be transferred during the execution.
     fun run(sender: vector<u8>, origin: vector<u8>, evm_contract_address: vector<u8>, code: vector<u8>, data: vector<u8>, readOnly: bool, value: u256): vector<u8> acquires Account, ContractEvent {
-        if(evm_contract_address == PRECOMPILE_ADDR) {
-            return precompile(sender, value, data, readOnly)
-        };
-
         // Convert the EVM address to a Move resource address.
-        let move_contract_address = to_address(evm_contract_address);
+        let move_contract_address = create_resource_address(&@aptos_framework, evm_contract_address);
         // Transfer the specified value to the EVM address
         transfer_to_evm_addr(sender, evm_contract_address, value);
         // Initialize an empty stack and memory for the EVM execution.
@@ -580,9 +517,14 @@ module aptos_framework::evm {
             }
                 //balance
             else if(opcode == 0x31) {
-                let addr = u256_to_data(vector::pop_back(stack));
-                let account_store = borrow_global<Account>(to_address(addr));
-                vector::push_back(stack, account_store.balance);
+                let evm_addr = u256_to_data(vector::pop_back(stack));
+                let target_address = create_resource_address(&@aptos_framework, evm_addr);
+                if(exists<Account>(target_address)) {
+                    let account_store = borrow_global<Account>(target_address);
+                    vector::push_back(stack, account_store.balance);
+                } else {
+                    vector::push_back(stack, 0)
+                };
                 i = i + 1;
             }
                 //origin
@@ -664,8 +606,9 @@ module aptos_framework::evm {
                 //extcodesize
             else if(opcode == 0x3b) {
                 let bytes = u256_to_data(vector::pop_back(stack));
-                let target_address = to_address(to_32bit(slice(bytes, 12, 20)));
-                if(exists<Account>(target_address)) {
+                let target_evm = to_32bit(slice(bytes, 12, 20));
+                let target_address = create_resource_address(&@aptos_framework, target_evm);
+                if(exist_contract(target_address)) {
                     let code = borrow_global<Account>(target_address).code;
                     vector::push_back(stack, (vector::length(&code) as u256));
                 } else {
@@ -721,7 +664,7 @@ module aptos_framework::evm {
             }
                 //chainid
             else if(opcode == 0x46) {
-                vector::push_back(stack, (CHAIN_ID as u256));
+                vector::push_back(stack, 1);
                 i = i + 1
             }
                 //self balance
@@ -769,7 +712,9 @@ module aptos_framework::evm {
             }
                 // sstore
             else if(opcode == 0x55) {
-                assert!(!readOnly, CONTRACT_READ_ONLY);
+                if(readOnly) {
+                    assert!(false, CONTRACT_READ_ONLY);
+                };
                 let contract_store = borrow_global_mut<Account>(move_contract_address);
                 let pos = vector::pop_back(stack);
                 let value = vector::pop_back(stack);
@@ -820,7 +765,7 @@ module aptos_framework::evm {
             }
                 //gas
             else if(opcode == 0x5a) {
-                vector::push_back(stack, 30000000);
+                vector::push_back(stack, 0);
                 i = i + 1
             }
                 //jump dest (no action, continue execution)
@@ -844,20 +789,19 @@ module aptos_framework::evm {
                 let readOnly = if (opcode == 0xfa) true else false;
                 let _gas = vector::pop_back(stack);
                 let evm_dest_addr = to_32bit(u256_to_data(vector::pop_back(stack)));
-                let move_dest_addr = to_address(evm_dest_addr);
+                let move_dest_addr = create_resource_address(&@aptos_framework, evm_dest_addr);
                 let msg_value = if (opcode == 0xf1) vector::pop_back(stack) else 0;
                 let m_pos = vector::pop_back(stack);
                 let m_len = vector::pop_back(stack);
                 let ret_pos = vector::pop_back(stack);
                 let ret_len = vector::pop_back(stack);
-
+                let ret_end = ret_len + ret_pos;
+                let params = slice(*memory, m_pos, m_len);
 
                 // debug::print(&utf8(b"call 222"));
                 // debug::print(&opcode);
                 // debug::print(&dest_addr);
-                if (evm_dest_addr == PRECOMPILE_ADDR || (exists<Account>(move_dest_addr) && borrow_global_mut<Account>(move_dest_addr).is_contract)) {
-                    let ret_end = ret_len + ret_pos;
-                    let params = slice(*memory, m_pos, m_len);
+                if (exist_contract(move_dest_addr)) {
                     let account_store_dest = borrow_global_mut<Account>(move_dest_addr);
 
                     let target = if (opcode == 0xf4) evm_contract_address else evm_dest_addr;
@@ -890,6 +834,9 @@ module aptos_framework::evm {
                     if (opcode == 0xfa) {
                         vector::push_back(stack, 0);
                     } else {
+                        if(opcode == 0xf1 && vector::length(&params) > 0) {
+                            revert(x"");
+                        };
                         transfer_to_evm_addr(evm_contract_address, evm_dest_addr, msg_value);
                     }
                 };
@@ -898,7 +845,9 @@ module aptos_framework::evm {
             }
                 //create
             else if(opcode == 0xf0) {
-                assert!(!readOnly, CONTRACT_READ_ONLY);
+                if(readOnly) {
+                    assert!(false, CONTRACT_READ_ONLY);
+                };
                 let msg_value = vector::pop_back(stack);
                 let pos = vector::pop_back(stack);
                 let len = vector::pop_back(stack);
@@ -909,19 +858,19 @@ module aptos_framework::evm {
 
                 let new_evm_contract_addr = get_contract_address(evm_contract_address, nonce);
                 debug::print(&utf8(b"create start"));
+                debug::print(&nonce);
                 debug::print(&new_evm_contract_addr);
-                let new_move_contract_addr = to_address(new_evm_contract_addr);
+                let new_move_contract_addr = create_resource_address(&@aptos_framework, new_evm_contract_addr);
                 contract_store.nonce = contract_store.nonce + 1;
 
                 debug::print(&exists<Account>(new_move_contract_addr));
-                assert!(!exist_contract(new_move_contract_addr), CREATE_CONTRACT_DEPLOYED);
+                assert!(!exist_contract(new_move_contract_addr), CONTRACT_DEPLOYED);
                 create_account_if_not_exist(new_move_contract_addr);
                 create_event_if_not_exist(new_move_contract_addr);
 
-                // let new_contract_store = borrow_global_mut<Account>(new_move_contract_addr);
-                borrow_global_mut<Account>(move_contract_address).nonce = 1;
-                borrow_global_mut<Account>(move_contract_address).is_contract = true;
-                borrow_global_mut<Account>(move_contract_address).code = run(evm_contract_address, sender, new_evm_contract_addr, new_codes, x"", false, msg_value);
+                borrow_global_mut<Account>(new_move_contract_addr).nonce = 1;
+                borrow_global_mut<Account>(new_move_contract_addr).is_contract = true;
+                borrow_global_mut<Account>(new_move_contract_addr).code = run(evm_contract_address, sender, new_evm_contract_addr, new_codes, x"", false, msg_value);
 
                 debug::print(&utf8(b"create end"));
                 ret_size = 32;
@@ -946,16 +895,12 @@ module aptos_framework::evm {
                 vector::append(&mut p, slice(evm_contract_address, 12, 20));
                 vector::append(&mut p, salt);
                 vector::append(&mut p, keccak256(new_codes));
-                // vector::append(&mut p, x"949a457935c25c9ba74fed34a89f32bee4b242d0d2f51e0c9d4020b45788a1d1");
                 let new_evm_contract_addr = to_32bit(slice(keccak256(p), 12, 20));
-                let new_move_contract_addr = to_address(new_evm_contract_addr);
+                let new_move_contract_addr = create_resource_address(&@aptos_framework, new_evm_contract_addr);
                 debug::print(&utf8(b"create2 start"));
-                debug::print(&p);
-                debug::print(&new_codes);
-                debug::print(&keccak256(new_codes));
                 debug::print(&new_evm_contract_addr);
                 debug::print(&exists<Account>(new_move_contract_addr));
-                assert!(!exist_contract(new_move_contract_addr), CREATE2_CONTRACT_DEPLOYED);
+                assert!(!exist_contract(new_move_contract_addr), CONTRACT_DEPLOYED);
                 create_account_if_not_exist(new_move_contract_addr);
                 create_event_if_not_exist(new_move_contract_addr);
 
@@ -978,11 +923,16 @@ module aptos_framework::evm {
                 let pos = vector::pop_back(stack);
                 let len = vector::pop_back(stack);
                 let bytes = slice(*memory, pos, len);
+                let message = if(vector::length(&bytes) == 0) x"" else {
+                    let len = to_u256(slice(bytes, 36, 32));
+                    slice(bytes, 68, len)
+                };
                 debug::print(&bytes);
                 // debug::print(&pos);
                 // debug::print(&len);
                 // debug::print(memory);
                 i = i + 1;
+                revert(message);
                 assert!(false, (opcode as u64));
             }
                 //log0
@@ -1104,7 +1054,7 @@ module aptos_framework::evm {
 
     fun transfer_from_move_addr(signer: &signer, evm_to: vector<u8>, amount: u256) acquires Account {
         if(amount > 0) {
-            let move_to = to_address(evm_to);
+            let move_to = create_resource_address(&@aptos_framework, evm_to);
             create_account_if_not_exist(move_to);
             coin::transfer<AptosCoin>(signer, move_to, ((amount / CONVERT_BASE)  as u64));
 
@@ -1115,8 +1065,9 @@ module aptos_framework::evm {
 
     fun transfer_to_evm_addr(evm_from: vector<u8>, evm_to: vector<u8>, amount: u256) acquires Account {
         if(amount > 0) {
-            let move_from = to_address(evm_from);
-            let move_to = to_address(evm_to);
+            let move_from = create_resource_address(&@aptos_framework, evm_from);
+            let move_to = create_resource_address(&@aptos_framework, evm_to);
+            create_account_if_not_exist(move_to);
             let account_store_from = borrow_global_mut<Account>(move_from);
             assert!(account_store_from.balance >= amount, INSUFFIENT_BALANCE);
             account_store_from.balance = account_store_from.balance - amount;
@@ -1131,7 +1082,7 @@ module aptos_framework::evm {
 
     fun transfer_to_move_addr(evm_from: vector<u8>, move_to: address, amount: u256) acquires Account {
         if(amount > 0) {
-            let move_from = to_address(evm_from);
+            let move_from = create_resource_address(&@aptos_framework, evm_from);
             let account_store_from = borrow_global_mut<Account>(move_from);
             assert!(account_store_from.balance >= amount, INSUFFIENT_BALANCE);
             account_store_from.balance = account_store_from.balance - amount;
@@ -1156,12 +1107,11 @@ module aptos_framework::evm {
 
     fun create_account_if_not_exist(addr: address) {
         if(!exists<Account>(addr)) {
-            let signer = create_signer(addr);
             if(!exists_at(addr)) {
                 create_account(addr);
-                coin::register<AptosCoin>(&signer);
             };
-
+            let signer = create_signer(addr);
+            coin::register<AptosCoin>(&signer);
             move_to(&signer, Account {
                 code: vector::empty(),
                 storage: table::new<u256, vector<u8>>(),
@@ -1172,9 +1122,9 @@ module aptos_framework::evm {
         };
     }
 
-    fun verify_nonce(addr: address, nonce: u64) acquires Account {
+    fun verify_nonce(addr: address, _nonce: u64) acquires Account {
         let coin_store_from = borrow_global_mut<Account>(addr);
-        assert!(coin_store_from.nonce == nonce, NONCE);
+        // assert!(coin_store_from.nonce == nonce, NONCE);
         coin_store_from.nonce = coin_store_from.nonce + 1;
     }
 
@@ -1182,70 +1132,92 @@ module aptos_framework::evm {
         let input_bytes = r;
         vector::append(&mut input_bytes, s);
         let signature = ecdsa_signature_from_bytes(input_bytes);
-        let recovery_id = if(v > 28) ((v - (CHAIN_ID * 2) - 35) as u8) else ((v - 27) as u8);
+        let recovery_id = ((v - (CHAIN_ID * 2) - 35) as u8);
         let pk_recover = ecdsa_recover(message_hash, recovery_id, &signature);
         let pk = keccak256(ecdsa_raw_public_key_to_bytes(borrow(&pk_recover)));
         debug::print(&slice(pk, 12, 20));
         assert!(slice(pk, 12, 20) == from, SIGNATURE);
     }
 
-    #[test(owner_2 = @0x124)]
-    fun test_precompile(owner_2: &signer) acquires Account {
-        let owner_2_addr = address_of(owner_2);
-        let framework_signer = &create_signer(@0x1);
-        features::change_feature_flags(
-            framework_signer, vector[features::get_multisig_accounts_feature()], vector[]);
-        timestamp::set_time_has_started_for_testing(framework_signer);
-        chain_id::initialize_for_test(framework_signer, 1);
-        let sender = to_32bit(x"054ecb78d0276cf182514211d0c21fe46590b654");
+    #[test]
+    fun test_simple_contract() acquires Account, ContractEvent {
+        let alice = x"689650fee4c8f9d11ce434695151a4a1f2c42a37";
+        let i = 0;
+        while(i < 87) {
+            let addr = get_contract_address(to_32bit(alice), i);
+            debug::print(&addr);
+            if(addr == to_32bit(x"116270382e7151059e2628febf3116f14ac3b956")) {
+                debug::print(&i);
+                break
+            };
+            i = i + 1;
+        };
 
-        let addr = to_address(sender);
-        let owner = create_account_for_test(addr);
-        let multisig_account = get_next_multisig_account_address(addr);
-        debug::print(&multisig_account);
+        let sender = to_32bit(alice);
+        let account = create_resource_address(&@aptos_framework, sender);
+        create_account_if_not_exist(account);
 
-        create_with_owners(&owner, vector[owner_2_addr], 2, vector[], vector[]);
-        create_transaction(owner_2, multisig_account, vector[1, 2, 3]);
-        debug::print(&can_be_executed(multisig_account, 1));
+        let contract1 = x"608060405234801561001057600080fd5b5061001a3361001f565b61008b565b600180546001600160a01b03191690556100388161003b565b50565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b610a1b8061009a6000396000f3fe6080604052600436106100e15760003560e01c8063bce246691161007f578063db1c45f911610059578063db1c45f91461026e578063e30c397814610290578063e87c0ee6146102ae578063f2fde38b146102d157600080fd5b8063bce246691461020e578063cf8d133f1461022e578063d72d04db1461024e57600080fd5b8063715018a6116100bb578063715018a6146101b157806379ba5097146101c65780637f020946146101db5780638da5cb5b146101f057600080fd5b8063155dd5ee1461012257806352897beb146101445780636650e91a1461017957600080fd5b3661011d5760405134815233907f5741979df5f3e491501da74d3b0a83dd2496ab1f34929865b3e190a8ad75859a9060200160405180910390a2005b600080fd5b34801561012e57600080fd5b5061014261013d3660046108d1565b6102f1565b005b34801561015057600080fd5b5061016461015f366004610906565b610352565b60405190151581526020015b60405180910390f35b34801561018557600080fd5b506101996101943660046108d1565b610365565b6040516001600160a01b039091168152602001610170565b3480156101bd57600080fd5b50610142610372565b3480156101d257600080fd5b50610142610386565b3480156101e757600080fd5b50610142610405565b3480156101fc57600080fd5b506000546001600160a01b0316610199565b34801561021a57600080fd5b50610142610229366004610906565b61045d565b34801561023a57600080fd5b50610142610249366004610921565b610470565b34801561025a57600080fd5b50610142610269366004610906565b610533565b34801561027a57600080fd5b50610283610546565b604051610170919061094b565b34801561029c57600080fd5b506001546001600160a01b0316610199565b3480156102ba57600080fd5b506102c3610557565b604051908152602001610170565b3480156102dd57600080fd5b506101426102ec366004610906565b610563565b6102f96105d4565b604051600090339083908381818185875af1925050503d806000811461033b576040519150601f19603f3d011682016040523d82523d6000602084013e610340565b606091505b505090508061034e57600080fd5b5050565b600061035f60028361062e565b92915050565b600061035f600283610653565b61037a6105d4565b610384600061065f565b565b60015433906001600160a01b031681146103f95760405162461bcd60e51b815260206004820152602960248201527f4f776e61626c6532537465703a2063616c6c6572206973206e6f7420746865206044820152683732bb9037bbb732b960b91b60648201526084015b60405180910390fd5b6104028161065f565b50565b61040d6105d4565b60006104196002610678565b905060005b815181101561034e5761045482828151811061043c5761043c610998565b6020026020010151600261068590919063ffffffff16565b5060010161041e565b6104656105d4565b61034e600282610685565b61047b60023361062e565b151560011461048957600080fd5b6000826001600160a01b03168260405160006040518083038185875af1925050503d80600081146104d6576040519150601f19603f3d011682016040523d82523d6000602084013e6104db565b606091505b505060408051338152602081018590529192506001600160a01b038516917fb1da214e79932aa5d0a3c3a3e3260aed98a973ca45f528c6dbbe3c818e3ea4bd910160405180910390a28061052e57600080fd5b505050565b61053b6105d4565b61034e60028261069a565b60606105526002610678565b905090565b600061055260026106af565b61056b6105d4565b600180546001600160a01b0383166001600160a01b0319909116811790915561059c6000546001600160a01b031690565b6001600160a01b03167f38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e2270060405160405180910390a350565b6000546001600160a01b031633146103845760405162461bcd60e51b815260206004820181905260248201527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e657260448201526064016103f0565b6001600160a01b038116600090815260018301602052604081205415155b9392505050565b600061064c83836106b9565b600180546001600160a01b0319169055610402816106e3565b6060600061064c83610733565b600061064c836001600160a01b03841661078f565b600061064c836001600160a01b038416610882565b600061035f825490565b60008260000182815481106106d0576106d0610998565b9060005260206000200154905092915050565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b60608160000180548060200260200160405190810160405280929190818152602001828054801561078357602002820191906000526020600020905b81548152602001906001019080831161076f575b50505050509050919050565b600081815260018301602052604081205480156108785760006107b36001836109ae565b85549091506000906107c7906001906109ae565b905081811461082c5760008660000182815481106107e7576107e7610998565b906000526020600020015490508087600001848154811061080a5761080a610998565b6000918252602080832090910192909255918252600188019052604090208390555b855486908061083d5761083d6109cf565b60019003818190600052602060002001600090559055856001016000868152602001908152602001600020600090556001935050505061035f565b600091505061035f565b60008181526001830160205260408120546108c95750815460018181018455600084815260208082209093018490558454848252828601909352604090209190915561035f565b50600061035f565b6000602082840312156108e357600080fd5b5035919050565b80356001600160a01b038116811461090157600080fd5b919050565b60006020828403121561091857600080fd5b61064c826108ea565b6000806040838503121561093457600080fd5b61093d836108ea565b946020939093013593505050565b6020808252825182820181905260009190848201906040850190845b8181101561098c5783516001600160a01b031683529284019291840191600101610967565b50909695505050505050565b634e487b7160e01b600052603260045260246000fd5b8181038181111561035f57634e487b7160e01b600052601160045260246000fd5b634e487b7160e01b600052603160045260246000fdfea264697066735822122037ef8e5dd0a012ce153c7618a6c8fb31d189aa0ed8b2edf80a52ffaa61cd881764736f6c63430008170033";
+        // let addr = execute(sender, to_32bit(x"0000"), 0, contract, 0);
+        let contract2 = x"60806040526706f05b59d3b200006007556014600855600a6009819055662386f26fc100009055600d805461ffff191660021790553480156200004157600080fd5b506200004d3362000053565b620000c1565b600180546001600160a01b03191690556200006e8162000071565b50565b600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b61297880620000d16000396000f3fe6080604052600436106102295760003560e01c80637662302211610123578063b497b354116100ab578063ccf1719f1161006f578063ccf1719f146106c8578063d39b5cbb146106de578063d9b61f6814610703578063e30c397814610723578063f2fde38b1461074157600080fd5b8063b497b35414610625578063b4a91e1e1461063b578063c072a4b814610668578063c20ee3fb14610688578063c5f956af146106a857600080fd5b80638da5cb5b116100f25780638da5cb5b146105705780639619367d146105a2578063990d2dbd146105b85780639d4b950c146105e5578063a7f360611461060557600080fd5b8063766230221461048e57806379ba50971461051b5780638824f5a71461053057806388ea41b91461055057600080fd5b80634d23c759116101b15780635c975abb116101755780635c975abb146103ec5780635f1b0fd8146104165780636605bfda1461043957806370cc91ad14610459578063715018a61461047957600080fd5b80634d23c7591461036d578063536a3ddc1461038257806353a2c19a1461039857806353ccbeea146103ac5780635a3e2e8b146103bf57600080fd5b80631fe543e3116101f85780631fe543e3146102b757806321154ec5146102d75780632e35a302146102f7578063398497711461031757806347e1d5501461034057600080fd5b806305287f0c1461023557806316c38b3c146102575780631bdb2d99146102775780631fa33a2a1461029757600080fd5b3661023057005b600080fd5b34801561024157600080fd5b50610255610250366004612124565b610761565b005b34801561026357600080fd5b50610255610272366004612152565b61076e565b34801561028357600080fd5b50610255610292366004612198565b610789565b3480156102a357600080fd5b506102556102b2366004612213565b61087e565b3480156102c357600080fd5b506102556102d2366004612320565b6108b1565b3480156102e357600080fd5b506102556102f2366004612124565b6108fb565b34801561030357600080fd5b50610255610312366004612366565b610908565b34801561032357600080fd5b5061032d60085481565b6040519081526020015b60405180910390f35b34801561034c57600080fd5b5061036061035b366004612124565b610938565b6040516103379190612416565b34801561037957600080fd5b5061032d6109f3565b34801561038e57600080fd5b5061032d60025481565b3480156103a457600080fd5b50600161032d565b61032d6103ba36600461249a565b610a33565b3480156103cb57600080fd5b506103df6103da366004612570565b610f81565b60405161033791906125ac565b3480156103f857600080fd5b506004546104069060ff1681565b6040519015158152602001610337565b34801561042257600080fd5b50600d5460405161ffff9091168152602001610337565b34801561044557600080fd5b50610255610454366004612366565b6110e0565b34801561046557600080fd5b50610255610474366004612124565b61110a565b34801561048557600080fd5b50610255611167565b34801561049a57600080fd5b506105076104a9366004612124565b6003602081905260009182526040909120805460018201546002830154938301546004909301549193909290916001600160a01b039182169181169060ff600160a01b8204811691600160a81b8104821691600160b01b9091041688565b6040516103379897969594939291906125fb565b34801561052757600080fd5b5061025561117b565b34801561053c57600080fd5b5061025561054b366004612655565b6111f5565b34801561055c57600080fd5b5061025561056b366004612124565b611215565b34801561057c57600080fd5b506000546001600160a01b03165b6040516001600160a01b039091168152602001610337565b3480156105ae57600080fd5b5061032d60075481565b3480156105c457600080fd5b506105d86105d3366004612679565b611222565b60405161033791906126af565b3480156105f157600080fd5b50610255610600366004612366565b611265565b34801561061157600080fd5b506102556106203660046126bd565b61128f565b34801561063157600080fd5b5061032d60095481565b34801561064757600080fd5b5061032d610656366004612124565b600e6020526000908152604090205481565b34801561067457600080fd5b50610255610683366004612124565b611316565b34801561069457600080fd5b506102556106a3366004612124565b611323565b3480156106b457600080fd5b5060065461058a906001600160a01b031681565b3480156106d457600080fd5b5061032d600a5481565b3480156106ea57600080fd5b5060045461058a9061010090046001600160a01b031681565b34801561070f57600080fd5b5060055461058a906001600160a01b031681565b34801561072f57600080fd5b506001546001600160a01b031661058a565b34801561074d57600080fd5b5061025561075c366004612366565b611330565b6107696113a1565b600255565b6107766113a1565b6004805460ff1916911515919091179055565b6107916113a1565b6040518060800160405280858152602001846001600160a01b03168152602001836001600160401b031681526020018263ffffffff16815250600c60008760028111156107e0576107e0612383565b60028111156107f1576107f1612383565b815260208082019290925260409081016000208351815591830151600192830180549285015160609095015163ffffffff16600160e01b026001600160e01b036001600160401b03909616600160a01b026001600160e01b03199094166001600160a01b039093169290921792909217939093169290921790915561087790849061087e565b5050505050565b6108866113a1565b6001600160a01b03919091166000908152600b60205260409020805460ff1916911515919091179055565b336000908152600b602052604090205460ff1615156001146108ed57604051637885129b60e01b81523360048201526024015b60405180910390fd5b6108f782826113fb565b5050565b6109036113a1565b600855565b6109106113a1565b600480546001600160a01b0390921661010002610100600160a81b0319909216919091179055565b610940612019565b60008281526003602081815260409283902083516101008101855281548152600182015492810192909252600281015493820193909352828201546001600160a01b0390811660608301526004840154908116608083015260ff600160a01b8204811660a0840152600160a81b8204811660c084015291939260e0850192600160b01b909204909116908111156109d9576109d9612383565b60038111156109ea576109ea612383565b90525092915050565b6008546006546000918291610a1291906001600160a01b03163161270c565b905080605f610a22826064612720565b610a2c919061270c565b9250505090565b6000323314610a7b5760405162461bcd60e51b8152602060048201526014602482015273139bc818dbdb9d1c9858dd1cc8185b1b1bddd95960621b60448201526064016108e4565b60045460ff1615610abf5760405162461bcd60e51b815260206004820152600e60248201526d11d85b59481a5cc81c185d5cd95960921b60448201526064016108e4565b6004805485516006546040805163e54c9f6b60e01b815290516001600160a01b036101009095048516959394600094610b4e949091163192879263e54c9f6b928281019260209291908290030181865afa158015610b21573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610b459190612737565b8460ff16611844565b90506000836001600160a01b031663c86210be33896040518363ffffffff1660e01b8152600401610b80929190612750565b602060405180830381865afa158015610b9d573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610bc191906127af565b600280549192506000610bd3836127cc565b9190505550610be0612019565b3360608201526001600160a01b03821660808201526002548152600060e082018190525060ff80851660c083019081526040808601516020808601918252606080890151848801908152600160a0890181815289516000908152600395869052969096208951815594519085015551600284015586015182820180546001600160a01b039283166001600160a01b03199091161790556080870151600484018054955196518816600160a81b0260ff60a81b1997909816600160a01b026001600160a81b03199096169190921617939093179384168517835560e08601518695929490939260ff60b01b191661ffff60a81b199091161790600160b01b908490811115610cef57610cef612383565b02179055505081516000908152600f602090815260409091208b51610d19935090918c019061205b565b5060065483516040516000926001600160a01b031691908381818185875af1925050503d8060008114610d68576040519150601f19603f3d011682016040523d82523d6000602084013e610d6d565b606091505b5050905080610dbe5760405162461bcd60e51b815260206004820152601a60248201527f4661696c656420746f2073656e6420746f20747265617375727900000000000060448201526064016108e4565b506020830151815160405163919ac7ff60e01b815260048101919091523360248201526001600160a01b03848116604483015287169163919ac7ff916064016000604051808303818588803b158015610e1657600080fd5b505af1158015610e2a573d6000803e3d6000fd5b5050835160009081526003602081815260409283902087518155908701516001820155918601516002830155606086015182820180546001600160a01b039283166001600160a01b0319909116179055608087015160048401805460a08a015160c08b015160ff908116600160a81b0260ff60a81b1991909216600160a01b026001600160a81b03199093169490951693909317179283168217815560e089015189985094965093945060ff60b01b191661ffff60a81b199091161790600160b01b908490811115610efe57610efe612383565b02179055509050508060000151336001600160a01b03167f7494146c887905966fa843fa10c09fab62f03193d020a38b6f77631eb79c221c8360a00151878d8660800151876020015188604001518f604051610f6097969594939291906127f5565b60405180910390a38051610f749088611b61565b5198975050505050505050565b80516060906000816001600160401b03811115610fa057610fa0612248565b604051908082528060200260200182016040528015610fd957816020015b610fc6612019565b815260200190600190039081610fbe5790505b50905060005b828110156110d85760036000868381518110610ffd57610ffd612889565b6020908102919091018101518252818101929092526040908101600020815161010081018352815481526001820154938101939093526002810154918301919091526003808201546001600160a01b0390811660608501526004830154908116608085015260ff600160a01b8204811660a0860152600160a81b8204811660c086015260e0850192600160b01b909204169081111561109e5761109e612383565b60038111156110af576110af612383565b815250508282815181106110c5576110c5612889565b6020908102919091010152600101610fdf565b509392505050565b6110e86113a1565b600680546001600160a01b0319166001600160a01b0392909216919091179055565b6111126113a1565b604051600090339083908381818185875af1925050503d8060008114611154576040519150601f19603f3d011682016040523d82523d6000602084013e611159565b606091505b50509050806108f757600080fd5b61116f6113a1565b6111796000611fb5565b565b60015433906001600160a01b031681146111e95760405162461bcd60e51b815260206004820152602960248201527f4f776e61626c6532537465703a2063616c6c6572206973206e6f7420746865206044820152683732bb9037bbb732b960b91b60648201526084016108e4565b6111f281611fb5565b50565b6111fd6113a1565b600d805461ffff191661ffff92909216919091179055565b61121d6113a1565b600755565b600f602052816000526040600020818154811061123e57600080fd5b9060005260206000209060209182820401919006915091509054906101000a900460ff1681565b61126d6113a1565b600580546001600160a01b0319166001600160a01b0392909216919091179055565b6112976113a1565b600082815260036020526040902060016004820154600160b01b900460ff1660038111156112c7576112c7612383565b036113055760405162461bcd60e51b815260206004820152600e60248201526d185b1c9958591e4818db1bdcd95960921b60448201526064016108e4565b80546113119083611b61565b505050565b61131e6113a1565b600955565b61132b6113a1565b600a55565b6113386113a1565b600180546001600160a01b0383166001600160a01b031990911681179091556113696000546001600160a01b031690565b6001600160a01b03167f38d16b8cac22d99fc7c124b9cd0de2d3fa1faef420bfe791d8c362d765e2270060405160405180910390a350565b6000546001600160a01b031633146111795760405162461bcd60e51b815260206004820181905260248201527f4f776e61626c653a2063616c6c6572206973206e6f7420746865206f776e657260448201526064016108e4565b6000828152600e602090815260408083205480845260038352818420600654600f85528386208054855181880281018801909652808652939692956001600160a01b0390921694929390918301828280156114a557602002820191906000526020600020906000905b82829054906101000a900460ff16600181111561148357611483612383565b8152602060019283018181049485019490930390920291018084116114645790505b505050505090506000815190506000816001600160401b038111156114cc576114cc612248565b60405190808252806020026020018201604052801561152257816020015b61150f6040805160608101909152806000815260200160008152602001600081525090565b8152602001906001900390816114ea5790505b5090506000805b8381101561171f5760008960008151811061154657611546612889565b602002602001015182604051602001611569929190918252602082015260400190565b60408051601f198184030181529190528051602090910120905061158e60028261289f565b1561159a57600161159d565b60005b8483815181106115af576115af612889565b60200260200101516000019060018111156115cc576115cc612383565b908160018111156115df576115df612383565b8152505060018483815181106115f7576115f7612889565b602002602001015160200190600381111561161457611614612383565b9081600381111561162757611627612383565b8152505083828151811061163d5761163d612889565b602002602001015160000151600181111561165a5761165a612383565b86838151811061166c5761166c612889565b6020026020010151600181111561168557611685612383565b0361171657600384838151811061169e5761169e612889565b60200260200101516020019060038111156116bb576116bb612383565b908160038111156116ce576116ce612383565b90525060018801546116e090846128b3565b9250876001015460026116f39190612720565b84838151811061170557611705612889565b602002602001015160400181815250505b50600101611529565b5080156117a85760038601546001600160a01b038087169163cf8d133f9116611749846002612720565b6040516001600160e01b031960e085901b1681526001600160a01b0390921660048301526024820152604401600060405180830381600087803b15801561178f57600080fd5b505af11580156117a3573d6000803e3d6000fd5b505050505b60048601805460ff60b01b1916600160b01b17905560405187907fd19a8beba6d94e6fe6a16804fc461f8a08a13176419a5ceee005d7d48f81366e906117ef9085906128c6565b60405180910390a2505050600093845250506003602081905260408320838155600181018490556002810193909355820180546001600160a01b03191690555060040180546001600160b81b03191690555050565b6118766040518060a0016040528060008152602001600081526020016000815260200160008152602001600081525090565b6000611884846127106128b3565b61189034612710612720565b61189a919061270c565b905060006118a8823461292f565b90506007548210156118f05760405162461bcd60e51b815260206004820152601160248201527023b0b6b136329036b7b9329610383632b160791b60448201526064016108e4565b6008546118fd908761270c565b8211156119405760405162461bcd60e51b815260206004820152601160248201527047616d626c65206c6573732c206b696e6760781b60448201526064016108e4565b600084116119905760405162461bcd60e51b815260206004820152601a60248201527f47616d626c65206174206c65617374206f6e63652c20706c656200000000000060448201526064016108e4565b6009548411156119e25760405162461bcd60e51b815260206004820152601860248201527f47616d626c652066657765722074696d65732c206b696e67000000000000000060448201526064016108e4565b60006119ee858461270c565b90506119fa858461289f565b15611a5d5760405162461bcd60e51b815260206004820152602d60248201527f47616d626c6520616e20616d6f756e7420646976697369626c6520627920796f60448201526c3ab9103132ba399610383632b160991b60648201526084016108e4565b600a54611a6a908261289f565b15611ac55760405162461bcd60e51b815260206004820152602560248201527f47616d626c652074686520726967687420616d6f756e7420706572206265742c60448201526410383632b160d91b60648201526084016108e4565b6000611ad1868461270c565b9050611add868461289f565b15611b345760405162461bcd60e51b815260206004820152602160248201527f496e7465726e616c206572726f723b2077726f6e672072616b6520616d6f756e6044820152601d60fa1b60648201526084016108e4565b6040805160a081018252948552602085019390935291830152606082015260006080820152949350505050565b6000600c6000836002811115611b7957611b79612383565b6002811115611b8a57611b8a612383565b81526020810191909152604001600020600101546001600160a01b0316905080611bec5760405162461bcd60e51b8152602060048201526013602482015272496e76616c696420565246206164647265737360681b60448201526064016108e4565b806002836002811115611c0157611c01612383565b03611d92578160006001600160a01b0382166361b93aa0600c83886002811115611c2d57611c2d612383565b6002811115611c3e57611c3e612383565b815260200190815260200160002060000154600c6000896002811115611c6657611c66612383565b6002811115611c7757611c77612383565b815260200190815260200160002060010160149054906101000a90046001600160401b0316600d60009054906101000a900461ffff16600c60008b6002811115611cc357611cc3612383565b6002811115611cd457611cd4612383565b81526020810191909152604090810160002060019081015491516001600160e01b031960e088901b16815260048101959095526001600160401b03909316602485015261ffff909116604484015263ffffffff600160e01b909104166064830152608482015260a401602060405180830381865afa158015611d5a573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190611d7e9190612737565b6000908152600e6020526040902086905550505b6000816001600160a01b0316635d3b1d30600c6000876002811115611db957611db9612383565b6002811115611dca57611dca612383565b815260200190815260200160002060000154600c6000886002811115611df257611df2612383565b6002811115611e0357611e03612383565b815260200190815260200160002060010160149054906101000a90046001600160401b0316600d60009054906101000a900461ffff16600c60008a6002811115611e4f57611e4f612383565b6002811115611e6057611e60612383565b81526020810191909152604090810160002060019081015491516001600160e01b031960e088901b16815260048101959095526001600160401b03909316602485015261ffff909116604484015263ffffffff600160e01b909104166064830152608482015260a4016020604051808303816000875af1158015611ee8573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190611f0c9190612737565b90506002846002811115611f2257611f22612383565b03611f9e576000818152600e60205260409020548514611f9e5760405162461bcd60e51b815260206004820152603160248201527f436f6d70757465642072657175657374494420646964206e6f7420657175616c604482015270081858dd1d585b081c995c5d595cdd1259607a1b60648201526084016108e4565b6000908152600e6020526040902093909355505050565b600180546001600160a01b03191690556111f281600080546001600160a01b038381166001600160a01b0319831681178455604051919092169283917f8be0079c531659141344cd1fd0a4f28419497f9722a3daafe3b4186f6b6457e09190a35050565b6040805161010081018252600080825260208201819052918101829052606081018290526080810182905260a0810182905260c081018290529060e082015290565b82805482825590600052602060002090601f016020900481019282156120ff5791602002820160005b838211156120d057835183826101000a81548160ff021916908360018111156120af576120af612383565b02179055509260200192600101602081600001049283019260010302612084565b80156120fd5782816101000a81549060ff02191690556001016020816000010492830192600103026120d0565b505b5061210b92915061210f565b5090565b5b8082111561210b5760008155600101612110565b60006020828403121561213657600080fd5b5035919050565b8035801515811461214d57600080fd5b919050565b60006020828403121561216457600080fd5b61216d8261213d565b9392505050565b80356003811061214d57600080fd5b6001600160a01b03811681146111f257600080fd5b600080600080600060a086880312156121b057600080fd5b6121b986612174565b94506020860135935060408601356121d081612183565b925060608601356001600160401b03811681146121ec57600080fd5b9150608086013563ffffffff8116811461220557600080fd5b809150509295509295909350565b6000806040838503121561222657600080fd5b823561223181612183565b915061223f6020840161213d565b90509250929050565b634e487b7160e01b600052604160045260246000fd5b604051601f8201601f191681016001600160401b038111828210171561228657612286612248565b604052919050565b60006001600160401b038211156122a7576122a7612248565b5060051b60200190565b600082601f8301126122c257600080fd5b813560206122d76122d28361228e565b61225e565b8083825260208201915060208460051b8701019350868411156122f957600080fd5b602086015b8481101561231557803583529183019183016122fe565b509695505050505050565b6000806040838503121561233357600080fd5b8235915060208301356001600160401b0381111561235057600080fd5b61235c858286016122b1565b9150509250929050565b60006020828403121561237857600080fd5b813561216d81612183565b634e487b7160e01b600052602160045260246000fd5b600481106111f2576111f2612383565b805182526020810151602083015260408101516040830152606081015160018060a01b038082166060850152806080840151166080850152505060ff60a08201511660a083015260ff60c08201511660c083015260e081015161240b81612399565b8060e0840152505050565b610100810161242582846123a9565b92915050565b600082601f83011261243c57600080fd5b81356001600160401b0381111561245557612455612248565b612468601f8201601f191660200161225e565b81815284602083860101111561247d57600080fd5b816020850160208301376000918101602001919091529392505050565b6000806000606084860312156124af57600080fd5b83356001600160401b03808211156124c657600080fd5b818601915086601f8301126124da57600080fd5b813560206124ea6122d28361228e565b82815260059290921b8401810191818101908a84111561250957600080fd5b948201945b83861015612535578535600281106125265760008081fd5b8252948201949082019061250e565b9750508701359250508082111561254b57600080fd5b506125588682870161242b565b92505061256760408501612174565b90509250925092565b60006020828403121561258257600080fd5b81356001600160401b0381111561259857600080fd5b6125a4848285016122b1565b949350505050565b6020808252825182820181905260009190848201906040850190845b818110156125ef576125db8385516123a9565b9284019261010092909201916001016125c8565b50909695505050505050565b88815260208101889052604081018790526001600160a01b0386811660608301528516608082015260ff84811660a0830152831660c0820152610100810161264283612399565b8260e08301529998505050505050505050565b60006020828403121561266757600080fd5b813561ffff8116811461216d57600080fd5b6000806040838503121561268c57600080fd5b50508035926020909101359150565b600281106126ab576126ab612383565b9052565b60208101612425828461269b565b600080604083850312156126d057600080fd5b8235915061223f60208401612174565b634e487b7160e01b600052601260045260246000fd5b634e487b7160e01b600052601160045260246000fd5b60008261271b5761271b6126e0565b500490565b8082028115828204841417612425576124256126f6565b60006020828403121561274957600080fd5b5051919050565b60018060a01b03831681526000602060406020840152835180604085015260005b8181101561278d57858101830151858201606001528201612771565b506000606082860101526060601f19601f830116850101925050509392505050565b6000602082840312156127c157600080fd5b815161216d81612183565b6000600182016127de576127de6126f6565b5060010190565b600381106126ab576126ab612383565b600060e0820160ff8a168352602060ff8a16602085015260e060408501528189518084526101008601915060208b01935060005b8181101561284c5761283c83865161269b565b9383019391830191600101612829565b50506001600160a01b03891660608601526080850188905260a08501879052925061287d91505060c08301846127e5565b98975050505050505050565b634e487b7160e01b600052603260045260246000fd5b6000826128ae576128ae6126e0565b500690565b80820180821115612425576124256126f6565b602080825282518282018190526000919060409081850190868401855b828110156129225781516128f885825161269b565b8681015161290581612399565b8588015285015185850152606090930192908501906001016128e3565b5091979650505050505050565b81810381811115612425576124256126f656fea2646970667358221220e9ac2526a515f512121e1f800bff9dd4f6dcfc56380393425b8287e5221cf73864736f6c63430008170033";
+        let addr1 = execute(sender, ZERO_ADDR, 0, contract1, 0);
+        let addr2 = execute(sender, ZERO_ADDR, 17, contract2, 0);
 
-        let calldata = x"dfaea79500000000000000000000000000000000000000000000000000000000000000010000000000000000000000000000000000000000000000000000000000000040000000000000000000000000000000000000000000000000000000000000006410d6791e69a62494f12ebcf5de820e0f70dfe6e9d9f67e979b7da1a34be4bb2d785973ba0000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000";
-        precompile(sender, 0, calldata, false);
+        let call_1_1 = x"9423f0720000000000000000000000003991ce7e803867f9e72f19cd7c6c570a40a597e1";
+        execute(sender, addr1, 6, call_1_1, 0);
 
-        debug::print(&can_be_executed(multisig_account, 1));
+        // let amount = 10500000000000000000;
+        // deposit_to(alice, amount);
+        // debug::print(&0);
+        // let calldata = x"6605bfda00000000000000000000000058daa362b6732d224a618149c5872b4942947681";
+        // execute(sender, addr, 1, calldata, amount);
+        // debug::print(&1);
+        // let calldata = x"98632b52000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        // execute(sender, addr, 2, calldata, amount);
+        // debug::print(&2);
+        // let calldata = x"53ccbeea000000000000000000000000000000000000000000000000000000000000006000000000000000000000000000000000000000000000000000000000000000a00000000000000000000000000000000000000000000000000000000000000001000000000000000000000000000000000000000000000000000000000000000100000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000";
+        // execute(sender, addr, 3, calldata, amount);
+        // debug::print(&3);
     }
 
     #[test]
     fun test_simple_deploy() acquires Account, ContractEvent {
-        let sender = to_32bit(x"054ecb78d0276cf182514211d0c21fe46590b654");
-        create_account_if_not_exist(to_address(sender));
-        let weth_bytecode = x"60c0604052600d60808190526c2bb930b83832b21022ba3432b960991b60a090815261002e916000919061007a565b50604080518082019091526004808252630ae8aa8960e31b602090920191825261005a9160019161007a565b506002805460ff1916601217905534801561007457600080fd5b50610115565b828054600181600116156101000203166002900490600052602060002090601f016020900481019282601f106100bb57805160ff19168380011785556100e8565b828001600101855582156100e8579182015b828111156100e85782518255916020019190600101906100cd565b506100f49291506100f8565b5090565b61011291905b808211156100f457600081556001016100fe565b90565b61074f806101246000396000f3fe60806040526004361061009c5760003560e01c8063313ce56711610064578063313ce5671461020e57806370a082311461023957806395d89b411461026c578063a9059cbb14610281578063d0e30db0146102ba578063dd62ed3e146102c25761009c565b806306fdde03146100a1578063095ea7b31461012b57806318160ddd1461017857806323b872dd1461019f5780632e1a7d4d146101e2575b600080fd5b3480156100ad57600080fd5b506100b66102fd565b6040805160208082528351818301528351919283929083019185019080838360005b838110156100f05781810151838201526020016100d8565b50505050905090810190601f16801561011d5780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b34801561013757600080fd5b506101646004803603604081101561014e57600080fd5b506001600160a01b03813516906020013561038b565b604080519115158252519081900360200190f35b34801561018457600080fd5b5061018d6103f1565b60408051918252519081900360200190f35b3480156101ab57600080fd5b50610164600480360360608110156101c257600080fd5b506001600160a01b038135811691602081013590911690604001356103f5565b3480156101ee57600080fd5b5061020c6004803603602081101561020557600080fd5b503561056d565b005b34801561021a57600080fd5b50610223610624565b6040805160ff9092168252519081900360200190f35b34801561024557600080fd5b5061018d6004803603602081101561025c57600080fd5b50356001600160a01b031661062d565b34801561027857600080fd5b506100b661063f565b34801561028d57600080fd5b50610164600480360360408110156102a457600080fd5b506001600160a01b038135169060200135610699565b61020c6106ad565b3480156102ce57600080fd5b5061018d600480360360408110156102e557600080fd5b506001600160a01b03813581169160200135166106fc565b6000805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156103835780601f1061035857610100808354040283529160200191610383565b820191906000526020600020905b81548152906001019060200180831161036657829003601f168201915b505050505081565b3360008181526004602090815260408083206001600160a01b038716808552908352818420869055815186815291519394909390927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925928290030190a350600192915050565b4790565b6001600160a01b03831660009081526003602052604081205482111561043c576040805162461bcd60e51b8152602060048201526000602482015290519081900360640190fd5b6001600160a01b038416331480159061047a57506001600160a01b038416600090815260046020908152604080832033845290915290205460001914155b156104fc576001600160a01b03841660009081526004602090815260408083203384529091529020548211156104d1576040805162461bcd60e51b8152602060048201526000602482015290519081900360640190fd5b6001600160a01b03841660009081526004602090815260408083203384529091529020805483900390555b6001600160a01b03808516600081815260036020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a35060019392505050565b336000908152600360205260409020548111156105ab576040805162461bcd60e51b8152602060048201526000602482015290519081900360640190fd5b33600081815260036020526040808220805485900390555183156108fc0291849190818181858888f193505050501580156105ea573d6000803e3d6000fd5b5060408051828152905133917f7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65919081900360200190a250565b60025460ff1681565b60036020526000908152604090205481565b60018054604080516020600284861615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156103835780601f1061035857610100808354040283529160200191610383565b60006106a63384846103f5565b9392505050565b33600081815260036020908152604091829020805434908101909155825190815291517fe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c9281900390910190a2565b60046020908152600092835260408084209091529082529020548156fea2646970667358221220da9c3a111ff307bcc21a489b63cc555d04d91b6d0ff23237180b67a42b605beb64736f6c63430006060033";
-        let weth_addr = execute(sender, DEPLOY_ADDR, 0, weth_bytecode, 0);
-        debug::print(&weth_addr);
+        let sender = x"054ecb78d0276cf182514211d0c21fe46590b654";
+        create_account_if_not_exist(create_resource_address(&@aptos_framework, sender));
+        let bytecode_1 = x"6101ca61003a600b82828239805160001a60731461002d57634e487b7160e01b600052600060045260246000fd5b30600052607381538281f3fe73000000000000000000000000000000000000000030146080604052600436106100355760003560e01c806313769cd41461003a575b600080fd5b81801561004657600080fd5b5061005a610055366004610177565b61005c565b005b600c8401546001600160a01b0316156100c75760405162461bcd60e51b8152602060048201526024808201527f526573657276652068617320616c7265616479206265656e20696e697469616c6044820152631a5e995960e21b606482015260840160405180910390fd5b83546000036100e0576b033b2e3c9fd0803ce800000084555b83600701546000036100ff576b033b2e3c9fd0803ce800000060078501555b600c840180546001600160a01b039485166001600160a01b0319909116179055600b840191909155600d909201805460ff60e81b19600168ff000000000000000160a01b03199091169390921692909217600160e01b17169055565b80356001600160a01b038116811461017257600080fd5b919050565b6000806000806080858703121561018d57600080fd5b8435935061019d6020860161015b565b9250604085013591506101b26060860161015b565b90509295919450925056fea164736f6c6343000815000a";
+        let addr_1 = execute(sender, ZERO_ADDR, 0, bytecode_1, 0);
+        debug::print(&addr_1);
+
+        let bytecode_2 = x"608060405234801561001057600080fd5b5060405161001d906101b6565b604051809103906000f080158015610039573d6000803e3d6000fd5b50600080546001600160a01b0319166001600160a01b03929092169182179055604051610065906101c3565b6001600160a01b039091168152602001604051809103906000f080158015610091573d6000803e3d6000fd5b50600180546001600160a01b0319166001600160a01b039283161790556000546040519116906100c0906101d0565b6001600160a01b039091168152602001604051809103906000f0801580156100ec573d6000803e3d6000fd5b50600280546001600160a01b0319166001600160a01b0392831617905560005460405191169061011b906101dd565b6001600160a01b039091168152602001604051809103906000f080158015610147573d6000803e3d6000fd5b50600380546001600160a01b0319166001600160a01b0392909216919091179055604051610174906101ea565b604051809103906000f080158015610190573d6000803e3d6000fd5b50600480546001600160a01b0319166001600160a01b03929092169190911790556101f7565b6112dc806102f983390190565b611321806115d583390190565b6106ae806128f683390190565b6103c780612fa483390190565b61047b8061336b83390190565b60f4806102056000396000f3fe6080604052348015600f57600080fd5b5060043610605a5760003560e01c80630d7ff88714605f578063406b7eae14608d578063410c3f4c14609f578063a293b0cd1460b1578063a59a99731460c3578063ab5b1dbc1460d5575b600080fd5b6000546071906001600160a01b031681565b6040516001600160a01b03909116815260200160405180910390f35b6004546071906001600160a01b031681565b6002546071906001600160a01b031681565b6005546071906001600160a01b031681565b6003546071906001600160a01b031681565b6001546071906001600160a01b03168156fea164736f6c6343000815000a608060405234801561001057600080fd5b506112bc806100206000396000f3fe60806040526004361061009c5760003560e01c80634fe7a6e5116100645780634fe7a6e514610292578063bcd6ffa4146102b2578063d15e0053146102d2578063e10076ad146102f2578063e240301914610334578063fa51854c1461035457600080fd5b80630902f1ac146100a157806318a4dbca146100cc57806328fcf4d3146100fa57806334b3beee1461010f57806345330a4014610272575b600080fd5b3480156100ad57600080fd5b506100b6610374565b6040516100c39190610f56565b60405180910390f35b3480156100d857600080fd5b506100ec6100e7366004610fb8565b6103d6565b6040519081526020016100c3565b61010d610108366004610ff1565b610462565b005b34801561011b57600080fd5b5061025a61012a366004611032565b6001600160a01b0390811660009081526020818152604091829020825161028081018452815481526001820154928101929092526002810154928201929092526003820154606082015260048201546080820152600582015460a0820152600682015460c0820152600782015460e082015260088201546101008201526009820154610120820152600a820154610140820152600b820154610160820152600c82015483166101808201819052600d909201549283166101a082015264ffffffffff600160a01b8404166101c082015260ff600160c81b8404811615156101e0830152600160d01b840481161515610200830152600160d81b840481161515610220830152600160e01b840481161515610240830152600160e81b90930490921615156102609092019190915290565b6040516001600160a01b0390911681526020016100c3565b34801561027e57600080fd5b5061010d61028d36600461104f565b61063a565b34801561029e57600080fd5b5061025a6102ad3660046110a2565b6106de565b3480156102be57600080fd5b5061010d6102cd3660046110c9565b610708565b3480156102de57600080fd5b506100ec6102ed366004611032565b610747565b3480156102fe57600080fd5b5061031261030d366004610fb8565b61076f565b60408051948552602085019390935291830152151560608201526080016100c3565b34801561034057600080fd5b506100ec61034f366004611032565b61081b565b34801561036057600080fd5b5061010d61036f366004611111565b6108b2565b606060028054806020026020016040519081016040528092919081815260200182805480156103cc57602002820191906000526020600020905b81546001600160a01b031681526001909101906020018083116103ae575b5050505050905090565b6001600160a01b03828116600090815260208190526040808220600c015490516370a0823160e01b815284841660048201529192169081906370a0823190602401602060405180830381865afa158015610434573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610458919061115c565b9150505b92915050565b6001600160a01b03831673eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee1461050e5734156104f45760405162461bcd60e51b815260206004820152603260248201527f557365722069732073656e64696e672045544820616c6f6e672077697468207460448201527134329022a9219918103a3930b739b332b91760711b60648201526084015b60405180910390fd5b6105096001600160a01b0384168330846108fd565b505050565b8034101561057c5760405162461bcd60e51b815260206004820152603560248201527f54686520616d6f756e7420616e64207468652076616c75652073656e7420746f604482015274040c8cae0dee6d2e840c8de40dcdee840dac2e8c6d605b1b60648201526084016104eb565b80341115610509576000610590823461118b565b90506000836001600160a01b03168261c35090604051600060405180830381858888f193505050503d80600081146105e4576040519150601f19603f3d011682016040523d82523d6000602084013e6105e9565b606091505b50509050806106335760405162461bcd60e51b8152602060048201526016602482015275151c985b9cd9995c881bd9881155120819985a5b195960521b60448201526064016104eb565b5050505050565b6001600160a01b038481166000908152602081905260409081902090516304dda73560e21b81526004810191909152848216602482015260448101849052908216606482015273d0ad8519b749c7b728478cec66f97d6bce8d3af6906313769cd49060840160006040518083038186803b1580156106b757600080fd5b505af41580156106cb573d6000803e3d6000fd5b505050506106d884610957565b50505050565b600281815481106106ee57600080fd5b6000918252602090912001546001600160a01b0316905081565b6001600160a01b038416600090815260208190526040902061072990610a09565b61073584836000610a9a565b80156106d8576106d8848460016108b2565b6001600160a01b038116600090815260208190526040812061076881610bb0565b9392505050565b6001600160a01b038083166000818152602081815260408083209486168352600182528083209383529290529081209091829182918291826107b189896103d6565b82549091506000036107e3576004909101549095506000945084935060ff650100000000009091041691506108129050565b806107ee8385610be4565b600284015460049094015491985096509194505065010000000000900460ff169150505b92959194509250565b60008073eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeed196001600160a01b0384160161084a57504761045c565b6040516370a0823160e01b81523060048201526001600160a01b038416906370a0823190602401602060405180830381865afa15801561088e573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610768919061115c565b6001600160a01b0391821660009081526001602090815260408083209590941682529390935291206004018054911515650100000000000265ff000000000019909216919091179055565b604080516001600160a01b0385811660248301528416604482015260648082018490528251808303909101815260849091019091526020810180516001600160e01b03166323b872dd60e01b1790526106d8908590610bf7565b6000805b6002548110156109b357826001600160a01b0316600282815481106109825761098261119e565b6000918252602090912001546001600160a01b0316036109a157600191505b806109ab816111b4565b91505061095b565b5080610a0557600280546001810182556000919091527f405787fa12a823e0f2b7631cc41b3ba8828b3321ca811111fa75cd3aa3bb5ace0180546001600160a01b0319166001600160a01b0384161790555b5050565b6000610a1482610c5a565b90508015610a05576001820154600d830154600091610a4091600160a01b900464ffffffffff16610c70565b8354909150610a50908290610cd3565b83556004830154600d840154600091610a7691600160a01b900464ffffffffff16610d17565b9050610a8f846007015482610cd390919063ffffffff16565b600785015550505050565b6001600160a01b038084166000908152602081905260408120600d810154909282918291166357e37af0888789610ad08361081b565b610ada91906111cd565b610ae4919061118b565b6002880154600389015460068a01546040516001600160e01b031960e088901b1681526001600160a01b039095166004860152602485019390935260448401919091526064830152608482015260a401606060405180830381865afa158015610b51573d6000803e3d6000fd5b505050506040513d601f19601f82011682018060405250810190610b7591906111e0565b600187019290925560058601556004850155505050600d01805464ffffffffff60a01b1916600160a01b4264ffffffffff1602179055505050565b6000806107688360000154610bde856001015486600d0160149054906101000a900464ffffffffff16610c70565b90610cd3565b8154600090810361045c5750600061045c565b6000610c0c6001600160a01b03841683610d5f565b90508051600014158015610c31575080806020019051810190610c2f919061120e565b155b1561050957604051635274afe760e01b81526001600160a01b03841660048201526024016104eb565b60008160030154826002015461045c91906111cd565b600080610c8464ffffffffff84164261118b565b90506000610ca7610c986301e13380610d6d565b610ca184610d6d565b90610d7d565b90506b033b2e3c9fd0803ce8000000610cc08683610cd3565b610cca91906111cd565b95945050505050565b60006b033b2e3c9fd0803ce8000000610cec838561122b565b610d0360026b033b2e3c9fd0803ce8000000611258565b610d0d91906111cd565b6107689190611258565b600080610d2b64ffffffffff84164261118b565b90506000610d3d6301e1338086611258565b9050610cca82610d596b033b2e3c9fd0803ce8000000846111cd565b90610db8565b606061076883836000610e31565b600061045c633b9aca008361122b565b600080610d8b600284611258565b905082610da46b033b2e3c9fd0803ce80000008661122b565b610dae90836111cd565b6104589190611258565b6000610dc560028361126c565b600003610dde576b033b2e3c9fd0803ce8000000610de0565b825b9050610ded600283611258565b91505b811561045c57610e008384610cd3565b9250610e0d60028361126c565b15610e1f57610e1c8184610cd3565b90505b610e2a600283611258565b9150610df0565b606081471015610e565760405163cd78605960e01b81523060048201526024016104eb565b600080856001600160a01b03168486604051610e729190611280565b60006040518083038185875af1925050503d8060008114610eaf576040519150601f19603f3d011682016040523d82523d6000602084013e610eb4565b606091505b5091509150610ec4868383610ece565b9695505050505050565b606082610ee357610ede82610f2a565b610768565b8151158015610efa57506001600160a01b0384163b155b15610f2357604051639996b31560e01b81526001600160a01b03851660048201526024016104eb565b5080610768565b805115610f3a5780518082602001fd5b604051630a12f52160e11b815260040160405180910390fd5b50565b6020808252825182820181905260009190848201906040850190845b81811015610f975783516001600160a01b031683529284019291840191600101610f72565b50909695505050505050565b6001600160a01b0381168114610f5357600080fd5b60008060408385031215610fcb57600080fd5b8235610fd681610fa3565b91506020830135610fe681610fa3565b809150509250929050565b60008060006060848603121561100657600080fd5b833561101181610fa3565b9250602084013561102181610fa3565b929592945050506040919091013590565b60006020828403121561104457600080fd5b813561076881610fa3565b6000806000806080858703121561106557600080fd5b843561107081610f";
+        let addr_2 = execute(sender, ZERO_ADDR, 1, bytecode_2, 0);
+        debug::print(&addr_2);
     }
 
-    #[test]
-    fun test_simple_move_tx() acquires Account, ContractEvent {
-        let sender = create_account_for_test(to_address(to_32bit(x"054ecb78d0276cf182514211d0c21fe46590b654")));
+    #[test_only]
+    fun deposit_to(addr: vector<u8>, amount: u256) acquires Account {
+        let evm = account::create_account_for_test(@0x1);
+        let (burn_cap, freeze_cap, mint_cap) = coin::initialize<AptosCoin>(
+            &evm,
+            string::utf8(b"APT"),
+            string::utf8(b"APT"),
+            8,
+            false,
+        );
+        let to = account::create_account_for_test(@0xc5cb1f1ce6951226e9c46ce8d42eda1ac9774a0fef91e2910939119ef0c95568);
+        let coins = coin::mint<AptosCoin>(((amount / CONVERT_BASE) as u64), &mint_cap);
+        coin::register<AptosCoin>(&to);
+        coin::register<AptosCoin>(&evm);
+        coin::deposit(@aptos_framework, coins);
 
-        let weth_bytecode = x"60c0604052600d60808190526c2bb930b83832b21022ba3432b960991b60a090815261002e916000919061007a565b50604080518082019091526004808252630ae8aa8960e31b602090920191825261005a9160019161007a565b506002805460ff1916601217905534801561007457600080fd5b50610115565b828054600181600116156101000203166002900490600052602060002090601f016020900481019282601f106100bb57805160ff19168380011785556100e8565b828001600101855582156100e8579182015b828111156100e85782518255916020019190600101906100cd565b506100f49291506100f8565b5090565b61011291905b808211156100f457600081556001016100fe565b90565b61074f806101246000396000f3fe60806040526004361061009c5760003560e01c8063313ce56711610064578063313ce5671461020e57806370a082311461023957806395d89b411461026c578063a9059cbb14610281578063d0e30db0146102ba578063dd62ed3e146102c25761009c565b806306fdde03146100a1578063095ea7b31461012b57806318160ddd1461017857806323b872dd1461019f5780632e1a7d4d146101e2575b600080fd5b3480156100ad57600080fd5b506100b66102fd565b6040805160208082528351818301528351919283929083019185019080838360005b838110156100f05781810151838201526020016100d8565b50505050905090810190601f16801561011d5780820380516001836020036101000a031916815260200191505b509250505060405180910390f35b34801561013757600080fd5b506101646004803603604081101561014e57600080fd5b506001600160a01b03813516906020013561038b565b604080519115158252519081900360200190f35b34801561018457600080fd5b5061018d6103f1565b60408051918252519081900360200190f35b3480156101ab57600080fd5b50610164600480360360608110156101c257600080fd5b506001600160a01b038135811691602081013590911690604001356103f5565b3480156101ee57600080fd5b5061020c6004803603602081101561020557600080fd5b503561056d565b005b34801561021a57600080fd5b50610223610624565b6040805160ff9092168252519081900360200190f35b34801561024557600080fd5b5061018d6004803603602081101561025c57600080fd5b50356001600160a01b031661062d565b34801561027857600080fd5b506100b661063f565b34801561028d57600080fd5b50610164600480360360408110156102a457600080fd5b506001600160a01b038135169060200135610699565b61020c6106ad565b3480156102ce57600080fd5b5061018d600480360360408110156102e557600080fd5b506001600160a01b03813581169160200135166106fc565b6000805460408051602060026001851615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156103835780601f1061035857610100808354040283529160200191610383565b820191906000526020600020905b81548152906001019060200180831161036657829003601f168201915b505050505081565b3360008181526004602090815260408083206001600160a01b038716808552908352818420869055815186815291519394909390927f8c5be1e5ebec7d5bd14f71427d1e84f3dd0314c0f7b2291e5b200ac8c7c3b925928290030190a350600192915050565b4790565b6001600160a01b03831660009081526003602052604081205482111561043c576040805162461bcd60e51b8152602060048201526000602482015290519081900360640190fd5b6001600160a01b038416331480159061047a57506001600160a01b038416600090815260046020908152604080832033845290915290205460001914155b156104fc576001600160a01b03841660009081526004602090815260408083203384529091529020548211156104d1576040805162461bcd60e51b8152602060048201526000602482015290519081900360640190fd5b6001600160a01b03841660009081526004602090815260408083203384529091529020805483900390555b6001600160a01b03808516600081815260036020908152604080832080548890039055938716808352918490208054870190558351868152935191937fddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef929081900390910190a35060019392505050565b336000908152600360205260409020548111156105ab576040805162461bcd60e51b8152602060048201526000602482015290519081900360640190fd5b33600081815260036020526040808220805485900390555183156108fc0291849190818181858888f193505050501580156105ea573d6000803e3d6000fd5b5060408051828152905133917f7fcf532c15f0a6db0bd6d0e038bea71d30d808c7d98cb3bf7268a95bf5081b65919081900360200190a250565b60025460ff1681565b60036020526000908152604090205481565b60018054604080516020600284861615610100026000190190941693909304601f810184900484028201840190925281815292918301828280156103835780601f1061035857610100808354040283529160200191610383565b60006106a63384846103f5565b9392505050565b33600081815260036020908152604091829020805434908101909155825190815291517fe1fffcc4923d04b559f4d29a8bfc6cda04eb5b0d3c460751c2402c5c5cc9109c9281900390910190a2565b60046020908152600092835260408084209091529082529020548156fea2646970667358221220da9c3a111ff307bcc21a489b63cc555d04d91b6d0ff23237180b67a42b605beb64736f6c63430006060033";
-        send_move_tx_to_evm(&sender, 0, DEPLOY_ADDR, u256_to_data(0), weth_bytecode, 1);
-        // let weth_addr = execute(sender, DEPLOY_ADDR, 0, weth_bytecode, 0);
-        // debug::print(&weth_addr);
+        deposit(&evm, addr, u256_to_data(amount));
+        coin::destroy_freeze_cap(freeze_cap);
+        coin::destroy_burn_cap(burn_cap);
+        coin::destroy_mint_cap(mint_cap);
     }
 
     #[test(evm = @0x2)]
     fun test_deposit_withdraw() acquires Account {
-        let signer = x"914d7fec6aac8cd542e72bca78b30650d45643d7";
-        debug::print(&get_contract_address(to_32bit(signer), 0));
-        let evm_addr = to_bytes(&@0x35756ba5b95c593377854ae0d8d8a9f1251c3cb42046539b82bb1ce39e264acf);
-        let move_addr = to_address(evm_addr);
-        debug::print(&evm_addr);
-        debug::print(&move_addr);
 
-        debug::print(&to_bytes(&@aptos_framework));
-        debug::print(&get_contract_address(to_32bit(x"892a2b7cF919760e148A0d33C1eb0f44D3b383f8"), 8));
-
-        // let sender = x"054ecb78d0276cf182514211d0c21fe46590b654";
         let sender = x"edd3bce148f5acffd4ae7589d12cf51f7e4788c6";
         let evm = account::create_account_for_test(@0x1);
         let (burn_cap, freeze_cap, mint_cap) = coin::initialize<AptosCoin>(
@@ -1272,6 +1244,7 @@ module aptos_framework::evm {
         // let coin_store_account = borrow_global<Account>(@aptos_framework);
         // debug::print(&coin_store_account.balance);
 
+
         let sender = x"8db97c7cece249c2b98bdc0226cc4c2a57bf52fc";
         deposit(&evm, sender, u256_to_data(1000000000000000000));
         // let data = x"608060405234801561001057600080fd5b5060f78061001f6000396000f3fe6080604052348015600f57600080fd5b5060043610603c5760003560e01c80633fb5c1cb1460415780638381f58a146053578063d09de08a14606d575b600080fd5b6051604c3660046083565b600055565b005b605b60005481565b60405190815260200160405180910390f35b6051600080549080607c83609b565b9190505550565b600060208284031215609457600080fd5b5035919050565b60006001820160ba57634e487b7160e01b600052601160045260246000fd5b506001019056fea2646970667358221220b7acd98dc008db06cadaea72991d3736d8dd08fbbf4bde9f69be2723a32b9be864736f6c63430008150033";
@@ -1288,4 +1261,3 @@ module aptos_framework::evm {
         coin::destroy_mint_cap(mint_cap);
     }
 }
-

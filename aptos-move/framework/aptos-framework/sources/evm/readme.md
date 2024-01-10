@@ -7,11 +7,10 @@ The Move EVM implements the EVM opcode, providing full compatibility with EVM. I
 The [Move EVM](https://github.com/movemntdev/movement-v2/tree/main/aptos-move/framework/aptos-framework/sources/evm) includes the following four files:
 
 ```txt
-├── decode.move      # EVM RLP decoding
-├── encode.move      # EVM RLP encoding
-├── evm.move         # EVM opcode and stack implementation
-└── util.move        # Data transformation
-└── delegate.move    # Helper functions
+├── decode.move  # EVM RLP decoding
+├── encode.move  # EVM RLP encoding
+├── evm.move     # EVM opcode and stack implementation
+└── util.move    # Data transformation
 
 ```
 Each Ethereum address is mapped to a key pair of a move account, owned by the EVM contract. The `evm.move` primarily provides the following interfaces:

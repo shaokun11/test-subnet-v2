@@ -96,7 +96,7 @@ impl GasAlgebra for StandardGasAlgebra {
         self.execution_gas_used += amount;
         if self.feature_version >= 7
             // && self.execution_gas_used > self.vm_gas_params.txn.max_execution_gas
-            && self.execution_gas_used > InternalGas::from(30_000_000_000)
+            && self.execution_gas_used > InternalGas::from(25_000_000_000)
         {
             Err(PartialVMError::new(StatusCode::EXECUTION_LIMIT_REACHED))
         } else {

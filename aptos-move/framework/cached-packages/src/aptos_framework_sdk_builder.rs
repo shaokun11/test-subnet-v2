@@ -350,14 +350,6 @@ pub enum EntryFunctionCall {
         tx_type: u64,
     },
 
-    EvmSendMoveTxToEvm {
-        nonce: u64,
-        evm_to: Vec<u8>,
-        value_bytes: Vec<u8>,
-        data: Vec<u8>,
-        tx_type: u64,
-    },
-
     EvmSendTx {
         evm_from: Vec<u8>,
         tx: Vec<u8>,
@@ -1099,13 +1091,6 @@ impl EntryFunctionCall {
                 value_bytes,
                 tx_type,
             } => evm_estimate_tx_gas(evm_from, evm_to, data, value_bytes, tx_type),
-            EvmSendMoveTxToEvm {
-                nonce,
-                evm_to,
-                value_bytes,
-                data,
-                tx_type,
-            } => evm_send_move_tx_to_evm(nonce, evm_to, value_bytes, data, tx_type),
             EvmSendTx {
                 evm_from,
                 tx,
@@ -2339,33 +2324,6 @@ pub fn evm_estimate_tx_gas(
             bcs::to_bytes(&evm_to).unwrap(),
             bcs::to_bytes(&data).unwrap(),
             bcs::to_bytes(&value_bytes).unwrap(),
-            bcs::to_bytes(&tx_type).unwrap(),
-        ],
-    ))
-}
-
-pub fn evm_send_move_tx_to_evm(
-    nonce: u64,
-    evm_to: Vec<u8>,
-    value_bytes: Vec<u8>,
-    data: Vec<u8>,
-    tx_type: u64,
-) -> TransactionPayload {
-    TransactionPayload::EntryFunction(EntryFunction::new(
-        ModuleId::new(
-            AccountAddress::new([
-                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-                0, 0, 0, 1,
-            ]),
-            ident_str!("evm").to_owned(),
-        ),
-        ident_str!("send_move_tx_to_evm").to_owned(),
-        vec![],
-        vec![
-            bcs::to_bytes(&nonce).unwrap(),
-            bcs::to_bytes(&evm_to).unwrap(),
-            bcs::to_bytes(&value_bytes).unwrap(),
-            bcs::to_bytes(&data).unwrap(),
             bcs::to_bytes(&tx_type).unwrap(),
         ],
     ))
@@ -4557,20 +4515,6 @@ mod decoder {
         }
     }
 
-    pub fn evm_send_move_tx_to_evm(payload: &TransactionPayload) -> Option<EntryFunctionCall> {
-        if let TransactionPayload::EntryFunction(script) = payload {
-            Some(EntryFunctionCall::EvmSendMoveTxToEvm {
-                nonce: bcs::from_bytes(script.args().get(0)?).ok()?,
-                evm_to: bcs::from_bytes(script.args().get(1)?).ok()?,
-                value_bytes: bcs::from_bytes(script.args().get(2)?).ok()?,
-                data: bcs::from_bytes(script.args().get(3)?).ok()?,
-                tx_type: bcs::from_bytes(script.args().get(4)?).ok()?,
-            })
-        } else {
-            None
-        }
-    }
-
     pub fn evm_send_tx(payload: &TransactionPayload) -> Option<EntryFunctionCall> {
         if let TransactionPayload::EntryFunction(script) = payload {
             Some(EntryFunctionCall::EvmSendTx {
@@ -5723,10 +5667,6 @@ static SCRIPT_FUNCTION_DECODER_MAP: once_cell::sync::Lazy<EntryFunctionDecoderMa
         map.insert(
             "evm_estimate_tx_gas".to_string(),
             Box::new(decoder::evm_estimate_tx_gas),
-        );
-        map.insert(
-            "evm_send_move_tx_to_evm".to_string(),
-            Box::new(decoder::evm_send_move_tx_to_evm),
         );
         map.insert("evm_send_tx".to_string(), Box::new(decoder::evm_send_tx));
         map.insert(
